@@ -58,7 +58,7 @@ module Jr
       parts = []
       start_idx = 0
       i = 0
-      depth = 0
+      stack = []
       quote = nil
       escaped = false
       regex = false
@@ -102,13 +102,20 @@ module Jr
         when "'", '"'
           quote = ch
         when "("
-          depth += 1
-        when ")"
-          depth -= 1 if depth > 0
+          stack << [")", i]
+        when "["
+          stack << ["]", i]
+        when "{"
+          stack << ["}", i]
+        when ")", "]", "}"
+          expected, open_idx = stack.pop
+          unless expected == ch
+            raise ArgumentError, "mismatched delimiter #{ch.inspect} at offset #{i}"
+          end
         when "/"
           regex = looks_like_regex_start?(source, i)
         when ">"
-          if depth.zero? && source[i, 2] == ">>"
+          if stack.empty? && source[i, 2] == ">>"
             parts << source[start_idx...i]
             i += 2
             start_idx = i
@@ -120,6 +127,11 @@ module Jr
       end
 
       parts << source[start_idx..]
+      unless stack.empty?
+        expected, open_idx = stack.last
+        raise ArgumentError, "unclosed delimiter #{expected.inspect} at offset #{open_idx}"
+      end
+
       parts
     end
 

@@ -96,6 +96,22 @@ stdout, stderr, status = run_jr('select(/ok/.match(_["foo"]["bar"])) >> _["x"]',
 assert_success(status, stderr, "regex in select")
 assert_equal(%w[50], lines(stdout), "regex filter output")
 
+input_split = <<~NDJSON
+  {"x":1}
+NDJSON
+
+stdout, stderr, status = run_jr('[1 >> 2] >> _', input_split)
+assert_success(status, stderr, "no split inside []")
+assert_equal(['[0]'], lines(stdout), "no split inside [] output")
+
+stdout, stderr, status = run_jr('{a: 1 >> 2} >> _[:a]', input_split)
+assert_success(status, stderr, "no split inside {}")
+assert_equal(%w[0], lines(stdout), "no split inside {} output")
+
+stdout, stderr, status = run_jr('(-> { 1 >> 2 }).call >> _ + 1', input_split)
+assert_success(status, stderr, "no split inside block")
+assert_equal(%w[1], lines(stdout), "no split inside block output")
+
 input_flat = <<~NDJSON
   {"items":[1,2]}
   {"items":[3]}
@@ -228,6 +244,14 @@ assert_equal([], lines(stdout), "post-reduce select drop output")
 stdout, stderr, status = run_jr('select(_["x"] > ) >> _["foo"]', "")
 assert_failure(status, "syntax error should fail before row loop")
 assert_includes(stderr, "syntax error")
+
+stdout, stderr, status = run_jr('([)] >> _', "")
+assert_failure(status, "mismatched delimiter should fail")
+assert_includes(stderr, "mismatched delimiter")
+
+stdout, stderr, status = run_jr('(_["x"] >> _["y"]', "")
+assert_failure(status, "unclosed delimiter should fail")
+assert_includes(stderr, "unclosed delimiter")
 
 input_broken_tail = <<~NDJSON
   {"foo":1}
