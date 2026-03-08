@@ -4,10 +4,10 @@ require_relative "runner"
 
 module Jrf
   class CLI
-    USAGE = "usage: jrf [-v] [--help] 'EXPR'"
+    USAGE = "usage: jrf [-v] [--help] 'STAGE >> STAGE >> ...'"
 
     HELP_TEXT = <<~'TEXT'
-      usage: jrf [-v] [--help] 'EXPR'
+      usage: jrf [-v] [--help] 'STAGE >> STAGE >> ...'
 
       JSON filter with the power and speed of Ruby.
 
@@ -15,14 +15,9 @@ module Jrf
         -v, --verbose  print compiled stage Ruby expressions
         -h, --help     show this help and exit
 
-      Expression Model:
+      Pipeline:
         Connect stages with top-level >>.
         The current value in each stage is available as _.
-
-      Built-ins:
-        select(predicate), flat, group, reduce(initial) { |acc, v| ... }
-        sum(expr), min(expr), max(expr), average(expr), stdev(expr)
-        sort(key_expr) { |a, b| ... }, percentile(expr, p)
 
       Examples:
         jrf '_["foo"]'
@@ -31,9 +26,9 @@ module Jrf
         jrf 'sort(_["at"]) >> _["id"]'
         jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 
-      More:
+      See Also:
         README.md
-        rake man && man -l man/jrf.1
+        man jrf
     TEXT
 
     def self.run(argv = ARGV, input: ARGF, out: $stdout, err: $stderr)
