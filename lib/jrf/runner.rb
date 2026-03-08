@@ -8,6 +8,8 @@ require_relative "row_context"
 
 module Jrf
   class Runner
+    RS_CHAR = "\x1e"
+
     class ProbeValue
       def [](key)
         self
@@ -24,10 +26,11 @@ module Jrf
 
     PROBE_VALUE = ProbeValue.new
 
-    def initialize(input: ARGF, out: $stdout, err: $stderr)
+    def initialize(input: ARGF, out: $stdout, err: $stderr, lax: false)
       @input = input
       @out = out
       @err = err
+      @lax = lax
     end
 
     def run(expression, verbose: false)
@@ -41,11 +44,8 @@ module Jrf
       error = nil
 
       begin
-        @input.each_line do |line|
-          line = line.strip
-          next if line.empty?
-
-          process_value(JSON.parse(line), compiled, ctx)
+        each_input_value do |value|
+          process_value(value, compiled, ctx)
         end
       rescue StandardError => e
         error = e
@@ -83,6 +83,44 @@ module Jrf
       end
 
       current_values.each { |value| @out.puts JSON.generate(value) }
+    end
+
+    def each_input_value
+      return each_input_value_lax { |value| yield value } if @lax
+
+      each_input_value_ndjson { |value| yield value }
+    end
+
+    def each_input_value_ndjson
+      @input.each_line do |raw_line|
+        line = raw_line.strip
+        next if line.empty?
+
+        yield JSON.parse(line)
+      end
+    end
+
+    def each_input_value_lax
+      require "oj"
+      source = @input.read.to_s
+      source = source.include?(RS_CHAR) ? source.tr(RS_CHAR, "\n") : source
+      handler = Class.new(Oj::ScHandler) do
+        def initialize(&emit)
+          @emit = emit
+        end
+
+        def hash_start = {}
+        def hash_key(key) = key
+        def hash_set(hash, key, value) = hash[key] = value
+        def array_start = []
+        def array_append(array, value) = array << value
+        def add_value(value) = @emit.call(value)
+      end.new { |value| yield value }
+      Oj.sc_parse(handler, source)
+    rescue LoadError
+      raise "oj is required for --lax mode (gem install oj)"
+    rescue Oj::ParseError => e
+      raise JSON::ParserError, e.message
     end
 
     def apply_stage(stage, input, ctx)

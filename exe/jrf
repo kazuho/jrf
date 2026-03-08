@@ -1,6 +1,12 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+begin
+  require "bundler/setup"
+rescue LoadError
+  # Allow running without Bundler in plain Ruby environments.
+end
+
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 require "jrf"
 
