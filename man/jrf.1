@@ -1,10 +1,10 @@
-# jrf - a JSON filter with the power and speed of Ruby
+.TH JRF 1 "2026-03-08" "jrf 0.1.1" "User Commands"
+.SH NAME
+jrf \- JSON filter with the power and speed of Ruby
+.SH SYNOPSIS
 
-## SYNOPSIS
-
-```sh
+.nf
 jrf 'STAGE >> STAGE >> STAGE ...' < input.ndjson
-jrf --help
 
 # Extract
 jrf '_["foo"]'
@@ -22,149 +22,160 @@ jrf '_["items"] >> flat'
 
 # Sort rows by key expression
 jrf 'sort(_["at"]) >> _["id"]'
-```
+.fi
 
-Build the man page from this README:
 
-```sh
-rake man
-man -l man/jrf.1
-```
-
-## WHY RUBY?
+.SH WHY RUBY
 
 No need to learn a new programming language! Just use Ruby to:
-- write whatever filtering logic inside `select(...)`
-- implement custom aggregation logic using `reduce(...) { block }`
+.IP \[bu] 2
+write whatever filtering logic inside select(...)
+.IP \[bu] 2
+implement custom aggregation logic using reduce(...) { block }
 
-In addition, `jrf` is extremely fast thanks to Ruby's JSON parser and the JIT.
-In this workload/environment, a simple test shows over 3x boost compared to `jq`:
+In addition, jrf is extremely fast thanks to Ruby's JSON parser and the JIT.
+In this workload/environment, a simple test shows over 3x boost compared to jq:
 
-```sh
+.nf
 % time jq -s 'map(.tid) | min' < large.ldjson
 327936
 jq -s 'map(.tid) | min' < large.ldjson  4.90s user 0.46s system 99% cpu 5.395 total
 % time jrf 'min(_["tid"])' < large.ldjson
 327936
 exe/jrf 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 total
-```
+.fi
 
-## INPUT AND OUTPUT
 
-- Input and output are NDJSON (one JSON value per line).
-- Empty lines are skipped.
-- Each non-empty line is parsed with `JSON.parse`.
+.SH INPUT AND OUTPUT
 
-## BUILT-IN FUNCTIONS
+.IP \[bu] 2
+Input and output are NDJSON (one JSON value per line).
+.IP \[bu] 2
+Empty lines are skipped.
+.IP \[bu] 2
+Each non-empty line is parsed with JSON.parse.
 
-`jrf` processes the input using a multi-stage pipeline that is connected by top-level `>>`.
+.SH BUILT-IN FUNCTIONS
 
-Within each stage, the current JSON value is available as `_`, and the following built-in functions are provided.
+jrf processes the input using a multi-stage pipeline that is connected by top-level >>.
 
-### select(predicate)
+Within each stage, the current JSON value is available as _, and the following built-in functions are provided.
+
+.SS "select(predicate)"
 
 Filters rows. If predicate is true, the current value passes through; if false, the row is dropped.
 
-```sh
+.nf
 jrf 'select(_["status"] == 200) >> _["path"]'
-```
+.fi
 
-### flat
+
+.SS "flat"
 
 Expands an Array into multiple rows, one output row per element.
 
-```sh
+.nf
 jrf '_["items"] >> flat'
-```
+.fi
 
-### group
-### group(expr)
 
-Collects values into one Array. This is the opposite of `flat`.
-`group` (without arguments) is shorthand for `group(_)`, i.e., collect the current stage value as-is.
-`group(expr)` first evaluates `expr` and collects that result instead.
+.SS "group"
+.SS "group(expr)"
 
-```sh
+Collects values into one Array. This is the opposite of flat.
+group (without arguments) is shorthand for group(_), i.e., collect the current stage value as-is.
+group(expr) first evaluates expr and collects that result instead.
+
+.nf
 jrf '_["id"] >> group'
 jrf 'group(_["id"])'
-```
+.fi
 
-### average(expr)
+
+.SS "average(expr)"
 
 Computes the average value across rows.
 
-```sh
+.nf
 jrf '_["latency"] >> average(_)'
-```
+.fi
 
-### min(expr)
+
+.SS "min(expr)"
 
 Computes the minimum value across rows.
 
-```sh
+.nf
 jrf '_["latency"] >> min(_)'
-```
+.fi
 
-### max(expr)
+
+.SS "max(expr)"
 
 Computes the maximum value across rows.
 
-```sh
+.nf
 jrf '_["latency"] >> max(_)'
-```
+.fi
 
-### stdev(expr)
+
+.SS "stdev(expr)"
 
 Computes the standard deviation across rows.
 
-```sh
+.nf
 jrf '_["latency"] >> stdev(_)'
-```
+.fi
 
-### sum(expr)
+
+.SS "sum(expr)"
 
 Computes the sum across rows.
 
-```sh
+.nf
 jrf '_["price"] * _["unit"] >> sum(_)'
-```
+.fi
 
-### percentile(expr, 0.95)
-### percentile(expr, [0.1, 0.5, 0.9])
 
-Computes percentiles for `p` in `[0.0, 1.0]`.
+.SS "percentile(expr, 0.95)"
+.SS "percentile(expr, [0.1, 0.5, 0.9])"
+
+Computes percentiles for p in [0.0, 1.0].
 
 If a scalar is given as a percentile, emits the value as a scalar.
 
 If an array of percentiles is given, the output format is:
-```json
+.nf
 {"percentile": 0.1, "value": 38}
 {"percentile": 0.5, "value": 123}
 {"percentile": 0.9, "value": 469}
-```
+.fi
 
-### reduce(initial) { |acc, v| ... }
+
+.SS "reduce(initial) { |acc, v| ... }"
 
 Generic custom reducer API.
-Most built-in aggregations are convenience wrappers around `reduce`, and many reshaping patterns can also be expressed with `reduce`.
+Most built-in aggregations are convenience wrappers around reduce, and many reshaping patterns can also be expressed with reduce.
 
-```sh
+.nf
 jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 jrf '_["count"] >> reduce(0) { |acc, v| acc + v }'
-```
+.fi
 
-### sort(key_expr)
-### sort(key_expr) { |a, b| ... }
+
+.SS "sort(key_expr)"
+.SS "sort(key_expr) { |a, b| ... }"
 
 Sorts rows.
 With one argument, rows are sorted by key expression.
 With a block, rows are sorted by custom comparator.
 
-```sh
+.nf
 jrf 'sort(_["at"]) >> _["id"]'
 jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
-```
+.fi
 
-## LICENSE
+
+.SH LICENSE
 
 MIT

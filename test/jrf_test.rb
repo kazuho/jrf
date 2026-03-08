@@ -93,6 +93,17 @@ assert_includes(stderr, "stage[1] kind=extract")
 assert_includes(stderr, 'original: _["hello"]')
 assert_includes(stderr, 'ruby: _["hello"]')
 
+stdout, stderr, status = Open3.capture3("./exe/jrf", "--help")
+assert_success(status, stderr, "help option")
+assert_includes(stdout, "usage: jrf [-v] [--help] 'EXPR'")
+assert_includes(stdout, "NDJSON transformer using Ruby expressions.")
+assert_equal([], lines(stderr), "help stderr output")
+
+stdout, stderr, status = run_jrf('select(_["hello"] == 123) >> _["hello"]', input_hello, "--verbose")
+assert_success(status, stderr, "dump stages verbose alias")
+assert_equal(%w[123], lines(stdout), "dump stages verbose alias output")
+assert_includes(stderr, "stage[0] kind=select")
+
 input_regex = <<~NDJSON
   {"foo":{"bar":"ok"},"x":50}
   {"foo":{"bar":"ng"},"x":70}
