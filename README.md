@@ -4,6 +4,7 @@
 
 ```sh
 jrf 'STAGE >> STAGE >> STAGE ...' < input.ndjson
+jrf --help
 
 # Extract
 jrf '_["foo"]'
@@ -21,6 +22,13 @@ jrf '_["items"] >> flat'
 
 # Sort rows by key expression
 jrf 'sort(_["at"]) >> _["id"]'
+```
+
+Build the man page from this README:
+
+```sh
+rake man
+man -l man/jrf.1
 ```
 
 ## WHY RUBY?

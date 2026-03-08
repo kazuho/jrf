@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.email = ["n/a@example.com"]
 
   spec.summary = "JSON filter with the power and speed of Ruby"
-  spec.description = "A JSON filter for NDJSON that uses Ruby expressions for transforms, selection, and aggregation."
+  spec.description = "jrf is an NDJSON filter. It lets you write transforms as Ruby expressions, so you can use arbitrary Ruby logic. It is also fast thanks to Ruby's JSON parser and JIT. It supports extraction, filtering, flattening, sorting, and aggregation in stage pipelines."
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0"
 
