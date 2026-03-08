@@ -28,17 +28,5 @@ module Jr
     def event(value, initial:, &step_fn)
       Event.new(-> { reduce(initial, &step_fn) }, value)
     end
-
-    def sum_event(value, initial: 0)
-      event(value, initial: initial) { |acc, v| acc + v }
-    end
-
-    def min_event(value)
-      event(value, initial: nil) { |acc, v| acc.nil? || v < acc ? v : acc }
-    end
-
-    def max_event(value)
-      event(value, initial: nil) { |acc, v| acc.nil? || v > acc ? v : acc }
-    end
   end
 end
