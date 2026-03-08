@@ -112,8 +112,8 @@ If an array of percentiles is given, the output format is:
 {"percentile": 0.9, "value": 469}
 ```
 
-### `reduce(initial) { |acc, v| ... }`
-### `reduce(value, initial: x) { |acc, v| ... }`
+### reduce(initial) { |acc, v| ... }
+### reduce(value, initial: x) { |acc, v| ... }
 
 Generic custom reducer API.
 Most built-in aggregations are convenience wrappers around `reduce`, and many reshaping patterns can also be expressed with `reduce`.
@@ -123,8 +123,8 @@ jr '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 jr '_["count"] >> reduce(0) { |acc, v| acc + v }'
 ```
 
-### `sort(key_expr)`
-### `sort(key_expr) { |a, b| ... }`
+### sort(key_expr)
+### sort(key_expr) { |a, b| ... }
 
 Sorts rows.
 With one argument, rows are sorted by key expression.
