@@ -106,6 +106,10 @@ stdout, stderr, status = run_jr('sum(_["foo"])', input)
 assert_failure(status, "sum unsupported")
 assert_includes(stderr, "sum(...) is not supported yet")
 
+stdout, stderr, status = run_jr('select(_["x"] > ) >> _["foo"]', "")
+assert_failure(status, "syntax error should fail before row loop")
+assert_includes(stderr, "syntax error")
+
 input_chain = <<~NDJSON
   {"foo":{"bar":{"z":1},"keep":true}}
   {"foo":{"bar":{"z":2},"keep":false}}
