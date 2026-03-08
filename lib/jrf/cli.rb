@@ -15,17 +15,25 @@ module Jrf
         -v, --verbose  print compiled stage Ruby expressions
         -h, --help     show this help and exit
 
-      Pipeline:
+      Expression Model:
         Connect stages with top-level >>.
-        Current value in each stage is available as _.
+        The current value in each stage is available as _.
+
+      Built-ins:
+        select(predicate), flat, group, reduce(initial) { |acc, v| ... }
+        sum(expr), min(expr), max(expr), average(expr), stdev(expr)
+        sort(key_expr) { |a, b| ... }, percentile(expr, p)
 
       Examples:
         jrf '_["foo"]'
         jrf 'select(_["x"] > 10) >> _["foo"]'
         jrf '_["items"] >> flat'
+        jrf 'sort(_["at"]) >> _["id"]'
         jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 
-      See README.md for full reference.
+      More:
+        README.md
+        rake man && man -l man/jrf.1
     TEXT
 
     def self.run(argv = ARGV, input: ARGF, out: $stdout, err: $stderr)
