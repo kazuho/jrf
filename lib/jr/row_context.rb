@@ -51,6 +51,32 @@ module Jr
       Reducers.event(value, initial: []) { |acc, v| acc << v }
     end
 
+    def percentile(value, percentage)
+      percentages = percentage.is_a?(Array) ? percentage : [percentage]
+      percentages.each { |p| validate_percentile!(p) }
+
+      finish =
+        if percentage.is_a?(Array)
+          ->(values) {
+            sorted = values.sort
+            percentages.map do |p|
+              { "percentile" => p, "value" => percentile_value(sorted, p) }
+            end
+          }
+        else
+          ->(values) {
+            percentile_value(values.sort, percentages.first)
+          }
+        end
+
+      Reducers.event(
+        value,
+        initial: [],
+        emit_many: percentage.is_a?(Array),
+        finish: finish
+      ) { |acc, v| acc << v }
+    end
+
     NO_KW = Object.new
 
     def reduce(*args, initial: NO_KW, &block)
@@ -69,6 +95,23 @@ module Jr
         end
 
       Reducers.event(value, initial: init, &block)
+    end
+
+    private
+
+    def validate_percentile!(value)
+      unless value.is_a?(Numeric) && value >= 0 && value <= 1
+        raise ArgumentError, "percentile must be numeric in [0, 1]"
+      end
+    end
+
+    def percentile_value(sorted_values, percentile)
+      return nil if sorted_values.empty?
+
+      idx = (percentile.to_f * sorted_values.length).ceil - 1
+      idx = 0 if idx.negative?
+      idx = sorted_values.length - 1 if idx >= sorted_values.length
+      sorted_values[idx]
     end
   end
 end

@@ -223,6 +223,18 @@ stdout, stderr, status = run_jr('select(_["x"] > 1000) >> _["foo"] >> group', in
 assert_success(status, stderr, "group no matches")
 assert_equal(['[]'], lines(stdout), "group no matches output")
 
+stdout, stderr, status = run_jr('percentile(_["foo"], 0.50)', input_sum)
+assert_success(status, stderr, "single percentile")
+assert_equal(%w[2], lines(stdout), "single percentile output")
+
+stdout, stderr, status = run_jr('percentile(_["foo"], [0.25, 0.50, 1.0])', input_sum)
+assert_success(status, stderr, "array percentile")
+assert_equal(
+  ['{"percentile":0.25,"value":1}', '{"percentile":0.5,"value":2}', '{"percentile":1.0,"value":4}'],
+  lines(stdout),
+  "array percentile output"
+)
+
 input_reduce = <<~NDJSON
   {"s":"hello"}
   {"s":"world"}
