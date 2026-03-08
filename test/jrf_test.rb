@@ -95,8 +95,9 @@ assert_includes(stderr, 'ruby: _["hello"]')
 
 stdout, stderr, status = Open3.capture3("./exe/jrf", "--help")
 assert_success(status, stderr, "help option")
-assert_includes(stdout, "usage: jrf [-v] [--help] 'STAGE >> STAGE >> ...'")
+assert_includes(stdout, "usage: jrf [-v] [--lax] [--help] 'STAGE >> STAGE >> ...'")
 assert_includes(stdout, "JSON filter with the power and speed of Ruby.")
+assert_includes(stdout, "--lax")
 assert_includes(stdout, "Pipeline:")
 assert_includes(stdout, "Connect stages with top-level >>.")
 assert_includes(stdout, "The current value in each stage is available as _.")
@@ -305,6 +306,57 @@ assert_equal(['"hello world jrf"'], lines(stdout), "reduce in two-stage form out
 stdout, stderr, status = run_jrf('sum(_["foo"]) >> select(_ > 100)', input_sum)
 assert_success(status, stderr, "post-reduce select drop")
 assert_equal([], lines(stdout), "post-reduce select drop output")
+
+input_whitespace_stream = "{\"foo\":1} {\"foo\":2}\n\t{\"foo\":3}\n"
+stdout, stderr, status = run_jrf('_["foo"]', input_whitespace_stream)
+assert_failure(status, "default NDJSON should reject same-line multi-values")
+assert_includes(stderr, "JSON::ParserError")
+
+stdout, stderr, status = run_jrf('_["foo"]', input_whitespace_stream, "--lax")
+assert_success(status, stderr, "whitespace-separated JSON stream with --lax")
+assert_equal(%w[1 2 3], lines(stdout), "whitespace-separated stream output")
+
+input_json_seq = "\x1e{\"foo\":10}\n\x1e{\"foo\":20}\n"
+stdout, stderr, status = run_jrf('_["foo"]', input_json_seq)
+assert_failure(status, "RS framing requires --lax")
+assert_includes(stderr, "JSON::ParserError")
+
+stdout, stderr, status = run_jrf('_["foo"]', input_json_seq, "--lax")
+assert_success(status, stderr, "json-seq style RS framing with --lax")
+assert_equal(%w[10 20], lines(stdout), "json-seq style output")
+
+input_lax_multiline = <<~JSONS
+  {
+    "foo": 101,
+    "bar": {"x": 1}
+  }
+  {
+    "foo": 202,
+    "bar": {"x": 2}
+  }
+JSONS
+stdout, stderr, status = run_jrf('_["foo"]', input_lax_multiline)
+assert_failure(status, "default NDJSON rejects multiline objects")
+assert_includes(stderr, "JSON::ParserError")
+
+stdout, stderr, status = run_jrf('_["bar"]["x"]', input_lax_multiline, "--lax")
+assert_success(status, stderr, "lax accepts multiline objects")
+assert_equal(%w[1 2], lines(stdout), "lax multiline object output")
+
+input_lax_mixed_separators = "{\"foo\":1}\n\x1e{\"foo\":2}\t{\"foo\":3}\n"
+stdout, stderr, status = run_jrf('_["foo"]', input_lax_mixed_separators, "--lax")
+assert_success(status, stderr, "lax accepts mixed whitespace and RS separators")
+assert_equal(%w[1 2 3], lines(stdout), "lax mixed separators output")
+
+input_lax_with_escaped_newline = "{\"s\":\"line1\\nline2\"}\n{\"s\":\"ok\"}\n"
+stdout, stderr, status = run_jrf('_["s"]', input_lax_with_escaped_newline, "--lax")
+assert_success(status, stderr, "lax handles escaped newlines in strings")
+assert_equal(['"line1\nline2"', '"ok"'], lines(stdout), "lax escaped newline string output")
+
+input_lax_trailing_rs = "\x1e{\"foo\":9}\n\x1e"
+stdout, stderr, status = run_jrf('_["foo"]', input_lax_trailing_rs, "--lax")
+assert_success(status, stderr, "lax ignores trailing separator")
+assert_equal(%w[9], lines(stdout), "lax trailing separator output")
 
 stdout, stderr, status = run_jrf('select(_["x"] > ) >> _["foo"]', "")
 assert_failure(status, "syntax error should fail before row loop")

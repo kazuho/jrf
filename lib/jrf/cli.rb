@@ -4,15 +4,16 @@ require_relative "runner"
 
 module Jrf
   class CLI
-    USAGE = "usage: jrf [-v] [--help] 'STAGE >> STAGE >> ...'"
+    USAGE = "usage: jrf [-v] [--lax] [--help] 'STAGE >> STAGE >> ...'"
 
     HELP_TEXT = <<~'TEXT'
-      usage: jrf [-v] [--help] 'STAGE >> STAGE >> ...'
+      usage: jrf [-v] [--lax] [--help] 'STAGE >> STAGE >> ...'
 
       JSON filter with the power and speed of Ruby.
 
       Options:
         -v, --verbose  print compiled stage Ruby expressions
+        --lax          parse a whitespace-separated JSON stream (also accepts RS 0x1e)
         -h, --help     show this help and exit
 
       Pipeline:
@@ -33,11 +34,15 @@ module Jrf
 
     def self.run(argv = ARGV, input: ARGF, out: $stdout, err: $stderr)
       verbose = false
+      lax = false
 
       while argv.first&.start_with?("-")
         case argv.first
         when "-v", "--verbose"
           verbose = true
+          argv.shift
+        when "--lax"
+          lax = true
           argv.shift
         when "-h", "--help"
           out.puts HELP_TEXT
@@ -55,7 +60,7 @@ module Jrf
       end
 
       expression = argv.shift
-      Runner.new(input: input, out: out, err: err).run(expression, verbose: verbose)
+      Runner.new(input: input, out: out, err: err, lax: lax).run(expression, verbose: verbose)
       0
     end
   end
