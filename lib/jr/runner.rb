@@ -133,7 +133,7 @@ module Jr
 
       stages.each_with_index do |stage, i|
         method_name = :"__jr_stage_#{i}"
-        mod.module_eval("def #{method_name}; #{stage[:src]}; end", "(jr stage #{i})", 1)
+        mod.module_eval("def #{method_name}; #{stage[:src]}; end", "(jrf stage #{i})", 1)
         compiled << stage.merge(method_name: method_name)
       end
 

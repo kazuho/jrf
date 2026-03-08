@@ -274,16 +274,16 @@ assert_equal(
 input_reduce = <<~NDJSON
   {"s":"hello"}
   {"s":"world"}
-  {"s":"jr"}
+  {"s":"jrf"}
 NDJSON
 
 stdout, stderr, status = run_jr('_["s"] >> reduce("") { |acc, v| acc.empty? ? v : "#{acc} #{v}" }', input_reduce)
 assert_success(status, stderr, "reduce with implicit value")
-assert_equal(['"hello world jr"'], lines(stdout), "reduce implicit value output")
+assert_equal(['"hello world jrf"'], lines(stdout), "reduce implicit value output")
 
 stdout, stderr, status = run_jr('_["s"] >> reduce("") { |acc, v| acc.empty? ? v : "#{acc} #{v}" }', input_reduce)
 assert_success(status, stderr, "reduce in two-stage form")
-assert_equal(['"hello world jr"'], lines(stdout), "reduce in two-stage form output")
+assert_equal(['"hello world jrf"'], lines(stdout), "reduce in two-stage form output")
 
 stdout, stderr, status = run_jr('sum(_["foo"]) >> select(_ > 100)', input_sum)
 assert_success(status, stderr, "post-reduce select drop")
