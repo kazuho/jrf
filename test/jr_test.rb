@@ -5,7 +5,7 @@ require "json"
 require "tmpdir"
 
 def run_jr(expr, input, *opts)
-  Open3.capture3("./jr", *opts, expr, stdin_data: input)
+  Open3.capture3("./exe/jr", *opts, expr, stdin_data: input)
 end
 
 def assert_equal(expected, actual, msg = nil)
@@ -36,7 +36,7 @@ def lines(str)
   str.lines.map(&:strip).reject(&:empty?)
 end
 
-File.chmod(0o755, "./jr")
+File.chmod(0o755, "./exe/jr")
 
 input = <<~NDJSON
   {"foo":1,"x":5}
