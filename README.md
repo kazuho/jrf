@@ -1,8 +1,4 @@
-# jr
-
-## NAME
-
-`jr` - JSON transformer with the power and speed of Ruby
+# jr - a JSON transformer with the power and speed of Ruby
 
 ## SYNOPSIS
 
@@ -27,17 +23,15 @@ jr '_["items"] >> flat'
 jr 'sort(_["at"]) >> _["id"]'
 ```
 
-## WHAT IS `jr`
+## WHY RUBY?
 
-`jr` is a JSON transformer with the power and speed of Ruby.
-
-You can use your knowledge of Ruby to:
+No need to learn a new programming language! Just use Ruby to:
 - write whatever filtering logic inside `select(...)`
 - implement custom aggregation logic using `reduce(...) { block }`
 - the current JSON value is available as `_`
 - the stages are piped using an `>>` operator
 
-Besides, `jr` is extremely fast thanks to Ruby's JSON parser and the JIT.
+In addition, `jr` is extremely fast thanks to Ruby's JSON parser and the JIT.
 In this workload/environment, a simple test shows over 3x boost compared to `jq`:
 
 ```sh
