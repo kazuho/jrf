@@ -15,7 +15,6 @@ module Jrf
             spec.fetch(:value),
             initial: reducer_initial_value(spec.fetch(:initial)),
             finish: spec[:finish],
-            emit_many: spec.fetch(:emit_many, false),
             &spec.fetch(:step)
           )
         end
@@ -60,7 +59,7 @@ module Jrf
       {
         value: value,
         initial: -> { [0.0, 0] },
-        finish: ->((sum, count)) { count.zero? ? nil : (sum / count) },
+        finish: ->((sum, count)) { [count.zero? ? nil : (sum / count)] },
         step: ->(acc, v) {
           acc[0] += v
           acc[1] += 1
@@ -74,11 +73,11 @@ module Jrf
         value: value,
         initial: [0, 0.0, 0.0],
         finish: ->((count, mean, m2)) {
-          return nil if count.zero?
-          return nil if sample && count < 2
+          return [nil] if count.zero?
+          return [nil] if sample && count < 2
 
           denom = sample ? (count - 1) : count
-          Math.sqrt(m2 / denom)
+          [Math.sqrt(m2 / denom)]
         },
         step: ->(acc, x) {
           count, mean, m2 = acc
@@ -100,7 +99,6 @@ module Jrf
         {
           value: ctx._,
           initial: -> { [] },
-          emit_many: true,
           finish: ->(rows) { rows.sort(&block) },
           step: ->(rows, row) { rows << row }
         }
@@ -109,7 +107,6 @@ module Jrf
         {
           value: [resolved_key, ctx._],
           initial: -> { [] },
-          emit_many: true,
           finish: ->(pairs) { pairs.sort_by(&:first).map(&:last) },
           step: ->(pairs, pair) { pairs << pair }
         }
@@ -128,7 +125,7 @@ module Jrf
 
       finish =
         if scalar
-          ->(values) { ctx.send(:percentile_value, values.sort, percentages.first) }
+          ->(values) { [ctx.send(:percentile_value, values.sort, percentages.first)] }
         else
           ->(values) {
             sorted = values.sort
@@ -141,7 +138,6 @@ module Jrf
       {
         value: value,
         initial: -> { [] },
-        emit_many: !scalar,
         finish: finish,
         step: ->(acc, v) { acc << v }
       }
@@ -166,16 +162,16 @@ module Jrf
 
   private
 
-    def create_reducer(value, initial:, emit_many: false, finish: nil, &step_fn)
+    def create_reducer(value, initial:, finish: nil, &step_fn)
       raise "internal error: reducer used outside stage context" unless @__jrf_stage
 
       reducers = (@__jrf_stage[:reducers] ||= [])
       idx = @__jrf_stage[:reducer_cursor] || 0
-      reducers[idx] ||= Reducers.reduce(initial, finish: finish, &step_fn)
+      finish_rows = finish || ->(acc) { [acc] }
+      reducers[idx] ||= Reducers.reduce(initial, finish: finish_rows, &step_fn)
       reducers[idx].step(value) unless @__jrf_stage[:reducer_probing]
       @__jrf_stage[:reducer_cursor] = idx + 1
       @__jrf_stage[:reducer_called] = true
-      @__jrf_stage[:reducer_emit_many] = emit_many if @__jrf_stage[:reducer_emit_many].nil?
       ReducerToken.new(idx)
     end
 
