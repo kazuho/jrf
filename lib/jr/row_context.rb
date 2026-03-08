@@ -6,6 +6,20 @@ module Jr
   class RowContext
     ReducerToken = Struct.new(:index)
 
+    class << self
+      def define_reducer(name, initial:, finish: nil, emit_many: false, &step_fn)
+        define_method(name) do |value = @obj|
+          create_reducer(
+            value,
+            initial: reducer_initial_value(initial),
+            finish: finish,
+            emit_many: emit_many,
+            &step_fn
+          )
+        end
+      end
+    end
+
     def initialize(obj = nil)
       @obj = obj
       @__jr_stage = nil
@@ -25,20 +39,15 @@ module Jr
     end
 
     def sum(value, initial: 0)
-      __jr_with_value__(value) { reduce(initial) { |acc, v| acc + v } }
+      create_reducer(value, initial: initial) { |acc, v| acc + v }
     end
 
-    def min(value)
-      __jr_with_value__(value) { reduce(nil) { |acc, v| acc.nil? || v < acc ? v : acc } }
-    end
-
-    def max(value)
-      __jr_with_value__(value) { reduce(nil) { |acc, v| acc.nil? || v > acc ? v : acc } }
-    end
+    define_reducer(:min, initial: nil) { |acc, v| acc.nil? || v < acc ? v : acc }
+    define_reducer(:max, initial: nil) { |acc, v| acc.nil? || v > acc ? v : acc }
 
     def average(value)
-      __jr_register_reducer__(
-        value: value,
+      create_reducer(
+        value,
         initial: [0.0, 0],
         finish: ->((sum, count)) { count.zero? ? nil : (sum / count) }
       ) do |acc, v|
@@ -49,8 +58,8 @@ module Jr
     end
 
     def stdev(value, sample: false)
-      __jr_register_reducer__(
-        value: value,
+      create_reducer(
+        value,
         initial: [0, 0.0, 0.0],
         finish: ->((count, mean, m2)) {
           return nil if count.zero?
@@ -75,8 +84,8 @@ module Jr
 
     def sort(key = @obj, &compare)
       if compare
-        __jr_register_reducer__(
-          value: @obj,
+        create_reducer(
+          @obj,
           initial: [],
           emit_many: true,
           finish: ->(rows) { rows.sort(&compare) }
@@ -84,8 +93,8 @@ module Jr
           rows << row
         end
       else
-        __jr_register_reducer__(
-          value: [key, @obj],
+        create_reducer(
+          [key, @obj],
           initial: [],
           emit_many: true,
           finish: ->(pairs) { pairs.sort_by(&:first).map(&:last) }
@@ -96,7 +105,7 @@ module Jr
     end
 
     def group(value = @obj)
-      __jr_register_reducer__(value: value, initial: []) { |acc, v| acc << v }
+      create_reducer(value, initial: []) { |acc, v| acc << v }
     end
 
     def percentile(value, percentage)
@@ -117,8 +126,8 @@ module Jr
           }
         end
 
-      __jr_register_reducer__(
-        value: value,
+      create_reducer(
+        value,
         initial: [],
         emit_many: percentage.is_a?(Array),
         finish: finish
@@ -128,7 +137,7 @@ module Jr
     def reduce(initial, &block)
       raise ArgumentError, "reduce requires a block" unless block
 
-      __jr_register_reducer__(value: @obj, initial: initial, &block)
+      create_reducer(@obj, initial: initial, &block)
     end
 
     def __jr_begin_stage__(stage, probing: false)
@@ -142,9 +151,9 @@ module Jr
       @__jr_stage && @__jr_stage[:reducer_called]
     end
 
-    private
+  private
 
-    def __jr_register_reducer__(value:, initial:, emit_many: false, finish: nil, &step_fn)
+    def create_reducer(value, initial:, emit_many: false, finish: nil, &step_fn)
       raise "internal error: reducer used outside stage context" unless @__jr_stage
 
       reducers = (@__jr_stage[:reducers] ||= [])
@@ -157,12 +166,11 @@ module Jr
       ReducerToken.new(idx)
     end
 
-    def __jr_with_value__(value)
-      prev = @obj
-      @obj = value
-      yield
-    ensure
-      @obj = prev
+    def reducer_initial_value(initial)
+      return initial.call if initial.respond_to?(:call)
+      return initial.dup if initial.is_a?(Array) || initial.is_a?(Hash)
+
+      initial
     end
 
     def validate_percentile!(value)
