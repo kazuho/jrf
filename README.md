@@ -60,6 +60,7 @@ exe/jrf 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 to
 `jrf` processes the input using a multi-stage pipeline that is connected by top-level `>>`.
 
 Within each stage, the current JSON value is available as `_`, and the following built-in functions are provided.
+For aggregation functions, `nil` values are ignored.
 
 ### select(predicate)
 
@@ -130,8 +131,10 @@ jrf '_["price"] * _["unit"] >> sum(_)'
 ```
 
 ### count()
+### count(expr)
 
-Counts rows.
+`count()` counts rows.
+`count(expr)` counts non-`nil` values of `expr`.
 
 ```sh
 jrf 'count()'

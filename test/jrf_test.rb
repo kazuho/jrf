@@ -177,6 +177,10 @@ stdout, stderr, status = run_jrf('count()', input_sum)
 assert_success(status, stderr, "count only")
 assert_equal(%w[4], lines(stdout), "count output")
 
+stdout, stderr, status = run_jrf('count(_["foo"])', input_sum)
+assert_success(status, stderr, "count(expr) only")
+assert_equal(%w[4], lines(stdout), "count(expr) output")
+
 stdout, stderr, status = run_jrf('min(_["foo"])', input_sum)
 assert_success(status, stderr, "min only")
 assert_equal(%w[1], lines(stdout), "min output")
@@ -208,6 +212,10 @@ assert_equal(%w[0], lines(stdout), "sum no matches output")
 stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> count()', input_sum)
 assert_success(status, stderr, "count no matches")
 assert_equal(%w[0], lines(stdout), "count no matches output")
+
+stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> count(_["foo"])', input_sum)
+assert_success(status, stderr, "count(expr) no matches")
+assert_equal(%w[0], lines(stdout), "count(expr) no matches output")
 
 stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> average(_["foo"])', input_sum)
 assert_success(status, stderr, "average no matches")
@@ -292,6 +300,82 @@ assert_equal(
   lines(stdout),
   "array percentile output"
 )
+
+input_with_nil = <<~NDJSON
+  {"foo":1}
+  {"foo":null}
+  {"bar":999}
+  {"foo":3}
+NDJSON
+
+stdout, stderr, status = run_jrf('sum(_["foo"])', input_with_nil)
+assert_success(status, stderr, "sum ignores nil")
+assert_equal(%w[4], lines(stdout), "sum ignores nil output")
+
+stdout, stderr, status = run_jrf('min(_["foo"])', input_with_nil)
+assert_success(status, stderr, "min ignores nil")
+assert_equal(%w[1], lines(stdout), "min ignores nil output")
+
+stdout, stderr, status = run_jrf('max(_["foo"])', input_with_nil)
+assert_success(status, stderr, "max ignores nil")
+assert_equal(%w[3], lines(stdout), "max ignores nil output")
+
+stdout, stderr, status = run_jrf('average(_["foo"])', input_with_nil)
+assert_success(status, stderr, "average ignores nil")
+assert_float_close(2.0, lines(stdout).first.to_f, 1e-12, "average ignores nil output")
+
+stdout, stderr, status = run_jrf('stdev(_["foo"])', input_with_nil)
+assert_success(status, stderr, "stdev ignores nil")
+assert_float_close(1.0, lines(stdout).first.to_f, 1e-12, "stdev ignores nil output")
+
+stdout, stderr, status = run_jrf('percentile(_["foo"], [0.5, 1.0])', input_with_nil)
+assert_success(status, stderr, "percentile ignores nil")
+assert_equal(
+  ['{"percentile":0.5,"value":1}', '{"percentile":1.0,"value":3}'],
+  lines(stdout),
+  "percentile ignores nil output"
+)
+
+stdout, stderr, status = run_jrf('count()', input_with_nil)
+assert_success(status, stderr, "count with nil rows")
+assert_equal(%w[4], lines(stdout), "count with nil rows output")
+
+stdout, stderr, status = run_jrf('count(_["foo"])', input_with_nil)
+assert_success(status, stderr, "count(expr) ignores nil")
+assert_equal(%w[2], lines(stdout), "count(expr) ignores nil output")
+
+input_all_nil = <<~NDJSON
+  {"foo":null}
+  {"bar":1}
+NDJSON
+
+stdout, stderr, status = run_jrf('sum(_["foo"])', input_all_nil)
+assert_success(status, stderr, "sum all nil")
+assert_equal(%w[0], lines(stdout), "sum all nil output")
+
+stdout, stderr, status = run_jrf('min(_["foo"])', input_all_nil)
+assert_success(status, stderr, "min all nil")
+assert_equal(%w[null], lines(stdout), "min all nil output")
+
+stdout, stderr, status = run_jrf('max(_["foo"])', input_all_nil)
+assert_success(status, stderr, "max all nil")
+assert_equal(%w[null], lines(stdout), "max all nil output")
+
+stdout, stderr, status = run_jrf('average(_["foo"])', input_all_nil)
+assert_success(status, stderr, "average all nil")
+assert_equal(%w[null], lines(stdout), "average all nil output")
+
+stdout, stderr, status = run_jrf('stdev(_["foo"])', input_all_nil)
+assert_success(status, stderr, "stdev all nil")
+assert_equal(%w[null], lines(stdout), "stdev all nil output")
+
+stdout, stderr, status = run_jrf('percentile(_["foo"], 0.5)', input_all_nil)
+assert_success(status, stderr, "percentile all nil")
+assert_equal(%w[null], lines(stdout), "percentile all nil output")
+
+stdout, stderr, status = run_jrf('count(_["foo"])', input_all_nil)
+assert_success(status, stderr, "count(expr) all nil")
+assert_equal(%w[0], lines(stdout), "count(expr) all nil output")
 
 input_multi_cols = <<~NDJSON
   {"a":1,"b":10}

@@ -44,19 +44,23 @@ module Jrf
     end
 
     define_reducer(:sum) do |_ctx, value, initial: 0, block: nil|
-      { value: value, initial: initial, step: ->(acc, v) { acc + v } }
+      { value: value, initial: initial, step: ->(acc, v) { v.nil? ? acc : (acc + v) } }
     end
 
-    define_reducer(:count) do |_ctx, block: nil|
-      { value: nil, initial: 0, step: ->(acc, _v) { acc + 1 } }
+    define_reducer(:count) do |_ctx, value = MISSING, block: nil|
+      if value.equal?(MISSING)
+        { value: nil, initial: 0, step: ->(acc, _v) { acc + 1 } }
+      else
+        { value: value, initial: 0, step: ->(acc, v) { v.nil? ? acc : (acc + 1) } }
+      end
     end
 
     define_reducer(:min) do |_ctx, value, block: nil|
-      { value: value, initial: nil, step: ->(acc, v) { acc.nil? || v < acc ? v : acc } }
+      { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v < acc ? v : acc) } }
     end
 
     define_reducer(:max) do |_ctx, value, block: nil|
-      { value: value, initial: nil, step: ->(acc, v) { acc.nil? || v > acc ? v : acc } }
+      { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v > acc ? v : acc) } }
     end
 
     define_reducer(:average) do |_ctx, value, block: nil|
@@ -65,6 +69,8 @@ module Jrf
         initial: -> { [0.0, 0] },
         finish: ->((sum, count)) { [count.zero? ? nil : (sum / count)] },
         step: ->(acc, v) {
+          return acc if v.nil?
+
           acc[0] += v
           acc[1] += 1
           acc
@@ -84,6 +90,8 @@ module Jrf
           [Math.sqrt(m2 / denom)]
         },
         step: ->(acc, x) {
+          return acc if x.nil?
+
           count, mean, m2 = acc
           count += 1
           delta = x - mean
@@ -143,7 +151,7 @@ module Jrf
         value: value,
         initial: -> { [] },
         finish: finish,
-        step: ->(acc, v) { acc << v }
+        step: ->(acc, v) { v.nil? ? acc : (acc << v) }
       }
     end
 
