@@ -52,7 +52,6 @@ module Jr
     end
 
     def reject_unsupported_stage!(stage)
-      raise ArgumentError, "flat is not supported yet" if stage == "flat"
     end
 
     def split_top_level_pipeline(source)

@@ -52,17 +52,30 @@ module Jr
     private
 
     def process_value(input, stages, ctx)
-      current = input
-      i = 0
-      while i < stages.size
-        stage = stages[i]
-        current = apply_stage(stage, current, ctx)
-        return if current.equal?(Control::DROPPED)
+      current_values = [input]
 
-        i += 1
+      stages.each do |stage|
+        next_values = []
+
+        current_values.each do |value|
+          out = apply_stage(stage, value, ctx)
+          if out.equal?(Control::DROPPED)
+            next
+          elsif flat_event?(out)
+            unless out.value.is_a?(Array)
+              raise TypeError, "flat expects Array, got #{out.value.class}"
+            end
+            next_values.concat(out.value)
+          else
+            next_values << out
+          end
+        end
+
+        return if next_values.empty?
+        current_values = next_values
       end
 
-      @out.puts JSON.generate(current)
+      current_values.each { |value| @out.puts JSON.generate(value) }
     end
 
     def apply_stage(stage, input, ctx)
@@ -86,6 +99,10 @@ module Jr
 
     def reducer_event?(value)
       value.is_a?(Reducers::Event)
+    end
+
+    def flat_event?(value)
+      value.is_a?(Control::Flat)
     end
 
     def flush_reducers(stages, ctx)

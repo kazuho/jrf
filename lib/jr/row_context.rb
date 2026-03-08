@@ -17,6 +17,10 @@ module Jr
       @obj
     end
 
+    def flat
+      Control::Flat.new(@obj)
+    end
+
     def sum(value, initial: 0)
       Reducers.sum_event(value, initial: initial)
     end

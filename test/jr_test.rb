@@ -96,9 +96,31 @@ stdout, stderr, status = run_jr('select(/ok/.match(_["foo"]["bar"])) >> _["x"]',
 assert_success(status, stderr, "regex in select")
 assert_equal(%w[50], lines(stdout), "regex filter output")
 
+input_flat = <<~NDJSON
+  {"items":[1,2]}
+  {"items":[3]}
+  {"items":[]}
+NDJSON
+
+stdout, stderr, status = run_jr('_["items"] >> flat', input_flat)
+assert_success(status, stderr, "flat basic")
+assert_equal(%w[1 2 3], lines(stdout), "flat basic output")
+
+input_flat_hash = <<~NDJSON
+  {"items":[{"x":1},{"x":2}]}
+NDJSON
+
+stdout, stderr, status = run_jr('_["items"] >> flat >> _["x"]', input_flat_hash)
+assert_success(status, stderr, "flat then extract")
+assert_equal(%w[1 2], lines(stdout), "flat then extract output")
+
+stdout, stderr, status = run_jr('_["items"] >> flat >> sum(_)', input_flat)
+assert_success(status, stderr, "flat then sum")
+assert_equal(%w[6], lines(stdout), "flat then sum output")
+
 stdout, stderr, status = run_jr('_["foo"] >> flat', input)
-assert_failure(status, "flat unsupported")
-assert_includes(stderr, "flat is not supported yet")
+assert_failure(status, "flat requires array")
+assert_includes(stderr, "flat expects Array")
 
 input_sum = <<~NDJSON
   {"foo":1,"x":5}
