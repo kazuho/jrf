@@ -89,11 +89,8 @@ module Jr
       value = eval_stage(stage, input, ctx)
       if value.equal?(Control::DROPPED)
         Control::DROPPED
-      elsif reducer_event?(value)
-        stage[:reducer] ||= value.factory.call
-        stage[:reducer_factory] ||= value.factory
-        stage[:reducer_emit_many] = value.emit_many if stage[:reducer_emit_many].nil?
-        stage[:reducer].step(value.value)
+      elsif ctx.__jr_reducer_called?
+        stage[:reducer_template] ||= value
         Control::DROPPED
       else
         value
@@ -102,11 +99,8 @@ module Jr
 
     def eval_stage(stage, input, ctx)
       ctx.reset(input)
+      ctx.__jr_begin_stage__(stage, probing: input.equal?(PROBE_VALUE))
       ctx.public_send(stage[:method_name])
-    end
-
-    def reducer_event?(value)
-      value.is_a?(Reducers::Event)
     end
 
     def flat_event?(value)
@@ -120,10 +114,10 @@ module Jr
         break if tail.empty?
 
         stage = tail.first
-        stage[:reducer] ||= stage[:reducer_factory]&.call
-        break unless stage[:reducer]
+        reducers = stage[:reducers]
+        break unless reducers&.any?
 
-        out = stage[:reducer].finish
+        out = finish_reducer_template(stage[:reducer_template], reducers)
         if stage[:reducer_emit_many]
           out.each { |value| process_value(value, tail.drop(1), ctx) }
         else
@@ -156,14 +150,10 @@ module Jr
     end
 
     def initialize_reducers(stages, ctx)
-      stages.each_with_index do |stage, i|
+      stages.each do |stage|
         begin
           value = eval_stage(stage, PROBE_VALUE, ctx)
-          if reducer_event?(value)
-            stage[:reducer_factory] = value.factory
-            stage[:reducer_emit_many] = value.emit_many
-            stage[:reducer] = value.factory.call
-          end
+          stage[:reducer_template] ||= value if ctx.__jr_reducer_called?
         rescue StandardError
           # Ignore probe-time errors; reducer will be created on first runtime event.
         end
@@ -171,7 +161,19 @@ module Jr
     end
 
     def reducer_stage?(stage)
-      stage[:reducer] || stage[:reducer_factory]
+      stage[:reducers]&.any?
+    end
+
+    def finish_reducer_template(template, reducers)
+      if template.is_a?(RowContext::ReducerToken)
+        reducers.fetch(template.index).finish
+      elsif template.is_a?(Array)
+        template.map { |v| finish_reducer_template(v, reducers) }
+      elsif template.is_a?(Hash)
+        template.transform_values { |v| finish_reducer_template(v, reducers) }
+      else
+        template
+      end
     end
   end
 end

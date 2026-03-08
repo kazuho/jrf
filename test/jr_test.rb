@@ -223,6 +223,20 @@ stdout, stderr, status = run_jr('select(_["x"] > 1000) >> _["foo"] >> group', in
 assert_success(status, stderr, "group no matches")
 assert_equal(['[]'], lines(stdout), "group no matches output")
 
+input_group_multi = <<~NDJSON
+  {"x":1,"y":"a"}
+  {"x":2,"y":"b"}
+  {"x":3,"y":"c"}
+NDJSON
+
+stdout, stderr, status = run_jr('{a: group(_["x"]), b: group(_["y"])}', input_group_multi)
+assert_success(status, stderr, "group in hash")
+assert_equal(['{"a":[1,2,3],"b":["a","b","c"]}'], lines(stdout), "group in hash output")
+
+stdout, stderr, status = run_jr('select(_["x"] > 1000) >> {a: group(_["x"]), b: group(_["y"])}', input_group_multi)
+assert_success(status, stderr, "group in hash no matches")
+assert_equal(['{"a":[],"b":[]}'], lines(stdout), "group in hash no-match output")
+
 stdout, stderr, status = run_jr('percentile(_["foo"], 0.50)', input_sum)
 assert_success(status, stderr, "single percentile")
 assert_equal(%w[2], lines(stdout), "single percentile output")

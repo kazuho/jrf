@@ -4,8 +4,11 @@ require_relative "reducers"
 
 module Jr
   class RowContext
+    ReducerToken = Struct.new(:index)
+
     def initialize(obj = nil)
       @obj = obj
+      @__jr_stage = nil
     end
 
     def reset(obj)
@@ -22,33 +25,41 @@ module Jr
     end
 
     def sum(value, initial: 0)
-      Reducers.event(value, initial: initial) { |acc, v| acc + v }
+      __jr_register_reducer__(value: value, initial: initial) { |acc, v| acc + v }
     end
 
     def min(value)
-      Reducers.event(value, initial: nil) { |acc, v| acc.nil? || v < acc ? v : acc }
+      __jr_register_reducer__(value: value, initial: nil) { |acc, v| acc.nil? || v < acc ? v : acc }
     end
 
     def max(value)
-      Reducers.event(value, initial: nil) { |acc, v| acc.nil? || v > acc ? v : acc }
+      __jr_register_reducer__(value: value, initial: nil) { |acc, v| acc.nil? || v > acc ? v : acc }
     end
 
     def sort(key = @obj, &compare)
       if compare
-        Reducers.event(@obj, initial: [], emit_many: true, finish: ->(rows) { rows.sort(&compare) }) do |rows, row|
+        __jr_register_reducer__(
+          value: @obj,
+          initial: [],
+          emit_many: true,
+          finish: ->(rows) { rows.sort(&compare) }
+        ) do |rows, row|
           rows << row
         end
       else
-        Reducers.event([key, @obj], initial: [], emit_many: true, finish: ->(pairs) {
-          pairs.sort_by(&:first).map(&:last)
-        }) do |pairs, pair|
+        __jr_register_reducer__(
+          value: [key, @obj],
+          initial: [],
+          emit_many: true,
+          finish: ->(pairs) { pairs.sort_by(&:first).map(&:last) }
+        ) do |pairs, pair|
           pairs << pair
         end
       end
     end
 
     def group(value = @obj)
-      Reducers.event(value, initial: []) { |acc, v| acc << v }
+      __jr_register_reducer__(value: value, initial: []) { |acc, v| acc << v }
     end
 
     def percentile(value, percentage)
@@ -69,8 +80,8 @@ module Jr
           }
         end
 
-      Reducers.event(
-        value,
+      __jr_register_reducer__(
+        value: value,
         initial: [],
         emit_many: percentage.is_a?(Array),
         finish: finish
@@ -94,10 +105,34 @@ module Jr
           raise ArgumentError, "reduce expects reduce(initial), reduce(value, initial: ...), or reduce(value, initial)"
         end
 
-      Reducers.event(value, initial: init, &block)
+      __jr_register_reducer__(value: value, initial: init, &block)
+    end
+
+    def __jr_begin_stage__(stage, probing: false)
+      @__jr_stage = stage
+      stage[:reducer_cursor] = 0
+      stage[:reducer_called] = false
+      stage[:reducer_probing] = probing
+    end
+
+    def __jr_reducer_called?
+      @__jr_stage && @__jr_stage[:reducer_called]
     end
 
     private
+
+    def __jr_register_reducer__(value:, initial:, emit_many: false, finish: nil, &step_fn)
+      raise "internal error: reducer used outside stage context" unless @__jr_stage
+
+      reducers = (@__jr_stage[:reducers] ||= [])
+      idx = @__jr_stage[:reducer_cursor] || 0
+      reducers[idx] ||= Reducers.reduce(initial, finish: finish, &step_fn)
+      reducers[idx].step(value) unless @__jr_stage[:reducer_probing]
+      @__jr_stage[:reducer_cursor] = idx + 1
+      @__jr_stage[:reducer_called] = true
+      @__jr_stage[:reducer_emit_many] = emit_many if @__jr_stage[:reducer_emit_many].nil?
+      ReducerToken.new(idx)
+    end
 
     def validate_percentile!(value)
       unless value.is_a?(Numeric) && value >= 0 && value <= 1
