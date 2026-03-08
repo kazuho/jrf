@@ -28,8 +28,6 @@ jr 'sort(_["at"]) >> _["id"]'
 No need to learn a new programming language! Just use Ruby to:
 - write whatever filtering logic inside `select(...)`
 - implement custom aggregation logic using `reduce(...) { block }`
-- the current JSON value is available as `_`
-- the stages are piped using an `>>` operator
 
 In addition, `jr` is extremely fast thanks to Ruby's JSON parser and the JIT.
 In this workload/environment, a simple test shows over 3x boost compared to `jq`:
@@ -51,31 +49,39 @@ exe/jr 'min(_["tid"])'  1.53s user 0.12s system 98% cpu 1.678 total
 
 ## BUILT-IN FUNCTIONS
 
-Pipelines are connected by top-level `>>`.
+`jr` procceses the input using a multi-stage pipeline that is connected by top-level `>>`.
 
-`select(predicate)`
+Within each stage, the current JSON value is available as `_`, and following built-in functions are provided.
+
+### select(predicate)
+
 Filters rows. If predicate is true, the current value passes through; if false, the row is dropped.
 
 ```sh
 jr 'select(_["status"] == 200) >> _["path"]'
 ```
 
-`flat`
+### flat
+
 Expands an Array into multiple rows, one output row per element.
 
 ```sh
 jr '_["items"] >> flat'
 ```
 
-`group(value = _)`
-Collects values into one Array.
+### group(expr)
+
+Collects values into one Array. This is the opposite of `flat`.
 
 ```sh
 jr '_["id"] >> group'
 ```
 
-`min(value)`
-Computes the minimum value across rows.
+### min(expr)
+### max(expr)
+### sum(expr)
+
+Computes the minimum, maximum, and summation value across rows.
 
 ```sh
 jr '_["latency"] >> min(_)'
@@ -88,22 +94,27 @@ Computes the maximum value across rows.
 jr '_["latency"] >> max(_)'
 ```
 
-`percentile(value, p_or_array)`
-Computes percentiles for `p` in `[0.0, 1.0]`.
-If `p_or_array` is an Array, emits multiple rows like `{"percentile": p, "value": result}`.
-
 ```sh
-jr 'percentile(_["ttlb"], 0.50)'
-jr 'percentile(_["ttlb"], [0.25, 0.50, 0.95])'
+jr '_["price"] * _["unit"] >> sum(_)'
 ```
 
-Percentile array output format:
+### percentile(expr, 0.95)
+### percentile(expr, [0.1, 0.5, 0.9])
+
+Computes percentiles for `p` in `[0.0, 1.0]`.
+
+If a scalar is given as a percentile, emits the value as a scalar.
+
+If an array of percentiles is given, the output format is:
 ```json
+{"percentile": 0.1, "value": 38}
 {"percentile": 0.5, "value": 123}
+{"percentile": 0.9, "value": 469}
 ```
 
-`reduce(initial) { |acc, v| ... }`
-`reduce(value, initial: x) { |acc, v| ... }`
+### `reduce(initial) { |acc, v| ... }`
+### `reduce(value, initial: x) { |acc, v| ... }`
+
 Generic custom reducer API.
 Most built-in aggregations are convenience wrappers around `reduce`, and many reshaping patterns can also be expressed with `reduce`.
 
@@ -112,7 +123,9 @@ jr '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 jr '_["count"] >> reduce(0) { |acc, v| acc + v }'
 ```
 
-`sort(key = _, &compare)`
+### `sort(key_expr)`
+### `sort(key_expr) { |a, b| ... }`
+
 Sorts rows.
 With one argument, rows are sorted by key expression.
 With a block, rows are sorted by custom comparator.
@@ -120,13 +133,6 @@ With a block, rows are sorted by custom comparator.
 ```sh
 jr 'sort(_["at"]) >> _["id"]'
 jr 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
-```
-
-`sum(value, initial: 0)`
-Computes the sum of values across rows.
-
-```sh
-jr '_["latency"] >> sum(_)'
 ```
 
 ## LICENSE
