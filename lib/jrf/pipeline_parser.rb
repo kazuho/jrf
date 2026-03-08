@@ -9,50 +9,10 @@ module Jrf
     def parse
       stages = split_top_level_pipeline(@source).map(&:strip).reject(&:empty?)
       raise ArgumentError, "empty expression" if stages.empty?
-      { stages: stages.map { |stage| parse_stage!(stage) } }
+      { stages: stages.map { |stage| { src: stage } } }
     end
 
     private
-
-    def parse_stage!(stage)
-      if select_stage?(stage)
-        {
-          kind: :select,
-          original: stage,
-          src: "(#{parse_select!(stage)}) ? _ : ::Jrf::Control::DROPPED"
-        }
-      else
-        reject_unsupported_stage!(stage)
-        {
-          kind: :extract,
-          original: stage,
-          src: validate_extract!(stage)
-        }
-      end
-    end
-
-    def validate_extract!(stage)
-      reject_unsupported_stage!(stage)
-      stage
-    end
-
-    def parse_select!(stage)
-      reject_unsupported_stage!(stage)
-      match = /\Aselect\s*\((.*)\)\s*\z/m.match(stage)
-      raise ArgumentError, "first stage must be select(...)" unless match
-
-      inner = match[1].strip
-      raise ArgumentError, "select(...) must contain an expression" if inner.empty?
-
-      inner
-    end
-
-    def select_stage?(stage)
-      /\Aselect\s*\(/.match?(stage)
-    end
-
-    def reject_unsupported_stage!(stage)
-    end
 
     def split_top_level_pipeline(source)
       parts = []

@@ -40,6 +40,10 @@ module Jrf
       Control::Flat.new(@obj)
     end
 
+    def select(predicate)
+      predicate ? @obj : Control::DROPPED
+    end
+
     define_reducer(:sum) do |_ctx, value, initial: 0, block: nil|
       { value: value, initial: initial, step: ->(acc, v) { acc + v } }
     end

@@ -12,7 +12,7 @@ module Jrf
       JSON filter with the power and speed of Ruby.
 
       Options:
-        -v, --verbose  print compiled stage Ruby expressions
+        -v, --verbose  print parsed stage expressions
         -h, --help     show this help and exit
 
       Pipeline:

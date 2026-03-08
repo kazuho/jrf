@@ -143,9 +143,7 @@ module Jrf
 
     def dump_stages(stages)
       stages.each_with_index do |stage, i|
-        @err.puts "stage[#{i}] kind=#{stage[:kind]}"
-        @err.puts "  original: #{stage[:original]}"
-        @err.puts "  ruby: #{stage[:src]}"
+        @err.puts "stage[#{i}]: #{stage[:src]}"
       end
     end
 
