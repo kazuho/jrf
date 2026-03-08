@@ -136,7 +136,6 @@ If an array of percentiles is given, the output format is:
 ```
 
 ### reduce(initial) { |acc, v| ... }
-### reduce(value, initial: x) { |acc, v| ... }
 
 Generic custom reducer API.
 Most built-in aggregations are convenience wrappers around `reduce`, and many reshaping patterns can also be expressed with `reduce`.

@@ -125,24 +125,10 @@ module Jr
       ) { |acc, v| acc << v }
     end
 
-    NO_KW = Object.new
-
-    def reduce(*args, initial: NO_KW, &block)
+    def reduce(initial, &block)
       raise ArgumentError, "reduce requires a block" unless block
 
-      value, init =
-        if initial != NO_KW
-          raise ArgumentError, "reduce(value, initial: ...): value is required" unless args.size == 1
-          [args[0], initial]
-        elsif args.size == 1
-          [@obj, args[0]]
-        elsif args.size == 2
-          [args[0], args[1]]
-        else
-          raise ArgumentError, "reduce expects reduce(initial), reduce(value, initial: ...), or reduce(value, initial)"
-        end
-
-      __jr_register_reducer__(value: value, initial: init, &block)
+      __jr_register_reducer__(value: @obj, initial: initial, &block)
     end
 
     def __jr_begin_stage__(stage, probing: false)
