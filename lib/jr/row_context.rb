@@ -25,15 +25,15 @@ module Jr
     end
 
     def sum(value, initial: 0)
-      __jr_register_reducer__(value: value, initial: initial) { |acc, v| acc + v }
+      __jr_with_value__(value) { reduce(initial) { |acc, v| acc + v } }
     end
 
     def min(value)
-      __jr_register_reducer__(value: value, initial: nil) { |acc, v| acc.nil? || v < acc ? v : acc }
+      __jr_with_value__(value) { reduce(nil) { |acc, v| acc.nil? || v < acc ? v : acc } }
     end
 
     def max(value)
-      __jr_register_reducer__(value: value, initial: nil) { |acc, v| acc.nil? || v > acc ? v : acc }
+      __jr_with_value__(value) { reduce(nil) { |acc, v| acc.nil? || v > acc ? v : acc } }
     end
 
     def average(value)
@@ -155,6 +155,14 @@ module Jr
       @__jr_stage[:reducer_called] = true
       @__jr_stage[:reducer_emit_many] = emit_many if @__jr_stage[:reducer_emit_many].nil?
       ReducerToken.new(idx)
+    end
+
+    def __jr_with_value__(value)
+      prev = @obj
+      @obj = value
+      yield
+    ensure
+      @obj = prev
     end
 
     def validate_percentile!(value)
