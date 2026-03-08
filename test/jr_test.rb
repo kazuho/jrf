@@ -3,7 +3,7 @@
 require "open3"
 
 def run_jr(expr, input, *opts)
-  Open3.capture3("./exe/jr", *opts, expr, stdin_data: input)
+  Open3.capture3("./exe/jrf", *opts, expr, stdin_data: input)
 end
 
 def assert_equal(expected, actual, msg = nil)
@@ -40,7 +40,7 @@ def lines(str)
   str.lines.map(&:strip).reject(&:empty?)
 end
 
-File.chmod(0o755, "./exe/jr")
+File.chmod(0o755, "./exe/jrf")
 
 input = <<~NDJSON
   {"foo":1,"x":5}

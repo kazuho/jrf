@@ -3,7 +3,7 @@
 require_relative "lib/jr/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "jr"
+  spec.name = "jrf"
   spec.version = Jr::VERSION
   spec.authors = ["kazuho"]
   spec.email = ["n/a@example.com"]
@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 3.0"
 
   spec.bindir = "exe"
-  spec.executables = ["jr"]
+  spec.executables = ["jrf"]
 
-  spec.files = Dir.glob("{exe,lib,test}/*") + Dir.glob("lib/**/*") + %w[DESIGN.txt jr.gemspec Gemfile Rakefile]
+  spec.files = Dir.glob("{exe,lib,test}/*") + Dir.glob("lib/**/*") + %w[DESIGN.txt jrf.gemspec Gemfile Rakefile]
 end

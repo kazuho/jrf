@@ -1,26 +1,26 @@
-# jr - a JSON transformer with the power and speed of Ruby
+# jrf - a JSON Filter with the Power and Speed of Ruby
 
 ## SYNOPSIS
 
 ```sh
-jr 'STAGE >> STAGE >> STAGE ...' < input.ndjson
+jrf 'STAGE >> STAGE >> STAGE ...' < input.ndjson
 
 # Extract
-jr '_["foo"]'
+jrf '_["foo"]'
 
 # Filter then extract
-jr 'select(_["x"] > 10) >> _["foo"]'
+jrf 'select(_["x"] > 10) >> _["foo"]'
 
 # Aggregate
-jr 'select(_["item"] == "Apple") >> sum(_["count"])'
-jr 'percentile(_["ttlb"], 0.50)'
-jr '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
+jrf 'select(_["item"] == "Apple") >> sum(_["count"])'
+jrf 'percentile(_["ttlb"], 0.50)'
+jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 
 # Flatten arrays into rows
-jr '_["items"] >> flat'
+jrf '_["items"] >> flat'
 
 # Sort rows by key expression
-jr 'sort(_["at"]) >> _["id"]'
+jrf 'sort(_["at"]) >> _["id"]'
 ```
 
 ## WHY RUBY?
@@ -29,16 +29,16 @@ No need to learn a new programming language! Just use Ruby to:
 - write whatever filtering logic inside `select(...)`
 - implement custom aggregation logic using `reduce(...) { block }`
 
-In addition, `jr` is extremely fast thanks to Ruby's JSON parser and the JIT.
+In addition, `jrf` is extremely fast thanks to Ruby's JSON parser and the JIT.
 In this workload/environment, a simple test shows over 3x boost compared to `jq`:
 
 ```sh
 % time jq -s 'map(.tid) | min' < large.ldjson
 327936
 jq -s 'map(.tid) | min' < large.ldjson  4.90s user 0.46s system 99% cpu 5.395 total
-% time jr 'min(_["tid"])' < large.ldjson
+% time jrf 'min(_["tid"])' < large.ldjson
 327936
-exe/jr 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 total
+exe/jrf 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 total
 ```
 
 ## INPUT AND OUTPUT
@@ -49,7 +49,7 @@ exe/jr 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 tot
 
 ## BUILT-IN FUNCTIONS
 
-`jr` processes the input using a multi-stage pipeline that is connected by top-level `>>`.
+`jrf` processes the input using a multi-stage pipeline that is connected by top-level `>>`.
 
 Within each stage, the current JSON value is available as `_`, and the following built-in functions are provided.
 
@@ -58,7 +58,7 @@ Within each stage, the current JSON value is available as `_`, and the following
 Filters rows. If predicate is true, the current value passes through; if false, the row is dropped.
 
 ```sh
-jr 'select(_["status"] == 200) >> _["path"]'
+jrf 'select(_["status"] == 200) >> _["path"]'
 ```
 
 ### flat
@@ -66,7 +66,7 @@ jr 'select(_["status"] == 200) >> _["path"]'
 Expands an Array into multiple rows, one output row per element.
 
 ```sh
-jr '_["items"] >> flat'
+jrf '_["items"] >> flat'
 ```
 
 ### group
@@ -77,8 +77,8 @@ Collects values into one Array. This is the opposite of `flat`.
 `group(expr)` first evaluates `expr` and collects that result instead.
 
 ```sh
-jr '_["id"] >> group'
-jr 'group(_["id"])'
+jrf '_["id"] >> group'
+jrf 'group(_["id"])'
 ```
 
 ### average(expr)
@@ -86,7 +86,7 @@ jr 'group(_["id"])'
 Computes the average value across rows.
 
 ```sh
-jr '_["latency"] >> average(_)'
+jrf '_["latency"] >> average(_)'
 ```
 
 ### min(expr)
@@ -94,7 +94,7 @@ jr '_["latency"] >> average(_)'
 Computes the minimum value across rows.
 
 ```sh
-jr '_["latency"] >> min(_)'
+jrf '_["latency"] >> min(_)'
 ```
 
 ### max(expr)
@@ -102,7 +102,7 @@ jr '_["latency"] >> min(_)'
 Computes the maximum value across rows.
 
 ```sh
-jr '_["latency"] >> max(_)'
+jrf '_["latency"] >> max(_)'
 ```
 
 ### stdev(expr)
@@ -110,7 +110,7 @@ jr '_["latency"] >> max(_)'
 Computes the standard deviation across rows.
 
 ```sh
-jr '_["latency"] >> stdev(_)'
+jrf '_["latency"] >> stdev(_)'
 ```
 
 ### sum(expr)
@@ -118,7 +118,7 @@ jr '_["latency"] >> stdev(_)'
 Computes the sum across rows.
 
 ```sh
-jr '_["price"] * _["unit"] >> sum(_)'
+jrf '_["price"] * _["unit"] >> sum(_)'
 ```
 
 ### percentile(expr, 0.95)
@@ -141,8 +141,8 @@ Generic custom reducer API.
 Most built-in aggregations are convenience wrappers around `reduce`, and many reshaping patterns can also be expressed with `reduce`.
 
 ```sh
-jr '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
-jr '_["count"] >> reduce(0) { |acc, v| acc + v }'
+jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
+jrf '_["count"] >> reduce(0) { |acc, v| acc + v }'
 ```
 
 ### sort(key_expr)
@@ -153,8 +153,8 @@ With one argument, rows are sorted by key expression.
 With a block, rows are sorted by custom comparator.
 
 ```sh
-jr 'sort(_["at"]) >> _["id"]'
-jr 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
+jrf 'sort(_["at"]) >> _["id"]'
+jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
 ```
 
 ## LICENSE
