@@ -13,7 +13,7 @@ module Jrf
 
       Options:
         -v, --verbose  print compiled stage Ruby expressions
-        --lax          parse whitespace-separated JSON texts; supports JSON-SEQ (RS 0x1e)
+        --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
         -h, --help     show this help and exit
 
       Pipeline:
