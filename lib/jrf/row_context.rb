@@ -143,9 +143,7 @@ module Jrf
         else
           ->(values) {
             sorted = values.sort
-            percentages.map do |p|
-              { "percentile" => p, "value" => ctx.send(:percentile_value, sorted, p) }
-            end
+            [percentages.map { |p| ctx.send(:percentile_value, sorted, p) }]
           }
         end
 

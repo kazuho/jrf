@@ -297,7 +297,7 @@ assert_equal(%w[2], lines(stdout), "single percentile output")
 stdout, stderr, status = run_jrf('percentile(_["foo"], [0.25, 0.50, 1.0])', input_sum)
 assert_success(status, stderr, "array percentile")
 assert_equal(
-  ['{"percentile":0.25,"value":1}', '{"percentile":0.5,"value":2}', '{"percentile":1.0,"value":4}'],
+  ['[1,2,4]'],
   lines(stdout),
   "array percentile output"
 )
@@ -332,7 +332,7 @@ assert_float_close(1.0, lines(stdout).first.to_f, 1e-12, "stdev ignores nil outp
 stdout, stderr, status = run_jrf('percentile(_["foo"], [0.5, 1.0])', input_with_nil)
 assert_success(status, stderr, "percentile ignores nil")
 assert_equal(
-  ['{"percentile":0.5,"value":1}', '{"percentile":1.0,"value":3}'],
+  ['[1,3]'],
   lines(stdout),
   "percentile ignores nil output"
 )
@@ -388,7 +388,7 @@ NDJSON
 stdout, stderr, status = run_jrf('{a: percentile(_["a"], [0.25, 0.50, 1.0]), b: percentile(_["b"], [0.25, 0.50, 1.0])}', input_multi_cols)
 assert_success(status, stderr, "nested array percentile for multiple columns")
 assert_equal(
-  ['{"a":[{"percentile":0.25,"value":1},{"percentile":0.5,"value":2},{"percentile":1.0,"value":4}],"b":[{"percentile":0.25,"value":10},{"percentile":0.5,"value":20},{"percentile":1.0,"value":40}]}'],
+  ['{"a":[1,2,4],"b":[10,20,40]}'],
   lines(stdout),
   "nested array percentile output"
 )
