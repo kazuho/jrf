@@ -185,6 +185,7 @@ jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
 
 Applies a reducer to each element of an Array, element-wise across rows.
 Each array position gets its own independent reducer instance.
+Inside the block, `_` remains the surrounding row value; use the block parameter for the element.
 
 ```sh
 jrf 'map { |x| sum(x) }'
@@ -197,6 +198,7 @@ jrf '_["values"] >> map { |x| min(x) }'
 
 Applies a reducer to each value of a Hash, key-wise across rows.
 Each key gets its own independent reducer instance.
+Inside the block, `_` remains the surrounding row value; use the block parameter for the value.
 
 ```sh
 jrf 'map_values { |v| sum(v) }'
@@ -211,7 +213,7 @@ Groups rows by key expression and applies a reducer per group.
 Without a block, collects rows into arrays (equivalent to `group_by(key) { group }`).
 
 With a block, applies the given reducer independently per group.
-Inside the block, `_` refers to the current row.
+Inside the block, `_` still refers to the surrounding row, and the current row is also yielded as the block parameter.
 
 ```sh
 jrf 'group_by(_["status"])'
@@ -220,7 +222,7 @@ jrf 'group_by(_["status"])'
 jrf 'group_by(_["status"]) { count() }'
 # → {"200":15,"404":3}
 
-jrf 'group_by(_["status"]) { average(_["latency"]) }'
+jrf 'group_by(_["status"]) { |row| average(row["latency"]) }'
 # → {"200":42.5,"404":120.0}
 ```
 

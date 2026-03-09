@@ -64,13 +64,10 @@ module Jrf
       map_reducer = (@reducers[idx] ||= MapReducer.new(type))
 
       unless @probing
-        saved_obj = @ctx._
-
         case type
         when :array
           raise TypeError, "map expects Array, got #{collection.class}" unless collection.is_a?(Array)
           collection.each_with_index do |v, i|
-            @ctx.reset(v)
             with_scoped_reducers(map_reducer.slots[i] ||= []) do
               result = block.call(v)
               map_reducer.templates[i] ||= result
@@ -79,15 +76,12 @@ module Jrf
         when :hash
           raise TypeError, "map_values expects Hash, got #{collection.class}" unless collection.is_a?(Hash)
           collection.each do |k, v|
-            @ctx.reset(v)
             with_scoped_reducers(map_reducer.slots[k] ||= []) do
               result = block.call(v)
               map_reducer.templates[k] ||= result
             end
           end
         end
-
-        @ctx.reset(saved_obj)
       end
 
       @cursor += 1
@@ -99,9 +93,10 @@ module Jrf
       map_reducer = (@reducers[idx] ||= MapReducer.new(:hash))
 
       unless @probing
+        row = @ctx._
         slot = (map_reducer.slots[key] ||= [])
         with_scoped_reducers(slot) do
-          result = block.call
+          result = block.call(row)
           map_reducer.templates[key] ||= result
         end
       end
