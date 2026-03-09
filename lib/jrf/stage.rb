@@ -9,6 +9,19 @@ module Jrf
 
     attr_reader :method_name, :src
 
+    def self.resolve_template(template, reducers)
+      if template.is_a?(ReducerToken)
+        rows = reducers.fetch(template.index).finish
+        rows.length == 1 ? rows.first : rows
+      elsif template.is_a?(Array)
+        template.map { |v| resolve_template(v, reducers) }
+      elsif template.is_a?(Hash)
+        template.transform_values { |v| resolve_template(v, reducers) }
+      else
+        template
+      end
+    end
+
     def initialize(ctx, method_name, src: nil)
       @ctx = ctx
       @method_name = method_name
@@ -91,7 +104,7 @@ module Jrf
       if @template.is_a?(ReducerToken)
         @reducers.fetch(@template.index).finish
       else
-        [finish_template(@template)]
+        [self.class.resolve_template(@template, @reducers)]
       end
     end
 
@@ -108,19 +121,6 @@ module Jrf
       @cursor = saved_cursor
     end
 
-    def finish_template(template)
-      if template.is_a?(ReducerToken)
-        rows = @reducers.fetch(template.index).finish
-        rows.length == 1 ? rows.first : rows
-      elsif template.is_a?(Array)
-        template.map { |v| finish_template(v) }
-      elsif template.is_a?(Hash)
-        template.transform_values { |v| finish_template(v) }
-      else
-        template
-      end
-    end
-
     class MapReducer
       attr_reader :slots, :templates
 
@@ -134,26 +134,11 @@ module Jrf
         case @type
         when :array
           keys = @slots.keys.sort
-          [keys.map { |k| resolve(@templates[k], @slots[k]) }]
+          [keys.map { |k| Stage.resolve_template(@templates[k], @slots[k]) }]
         when :hash
           result = {}
-          @slots.each { |k, reducers| result[k] = resolve(@templates[k], reducers) }
+          @slots.each { |k, reducers| result[k] = Stage.resolve_template(@templates[k], reducers) }
           [result]
-        end
-      end
-
-      private
-
-      def resolve(template, reducers)
-        if template.is_a?(ReducerToken)
-          rows = reducers.fetch(template.index).finish
-          rows.length == 1 ? rows.first : rows
-        elsif template.is_a?(::Array)
-          template.map { |v| resolve(v, reducers) }
-        elsif template.is_a?(::Hash)
-          template.transform_values { |v| resolve(v, reducers) }
-        else
-          template
         end
       end
     end
