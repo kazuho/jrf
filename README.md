@@ -151,11 +151,12 @@ Computes percentiles for `p` in `[0.0, 1.0]`.
 
 If a scalar is given as a percentile, emits the value as a scalar.
 
-If an array of percentiles is given, the output format is:
+If an array of percentiles is given, emits one array of values in the same order as the requested percentiles.
+For example, with `[0.1, 0.5, 0.9]`, the output is `[p10_value, p50_value, p90_value]`.
+
+Example output:
 ```json
-{"percentile": 0.1, "value": 38}
-{"percentile": 0.5, "value": 123}
-{"percentile": 0.9, "value": 469}
+[38, 123, 469]
 ```
 
 ### reduce(initial) { |acc, v| ... }
