@@ -1,17 +1,19 @@
 # frozen_string_literal: true
+
 require_relative "control"
 require_relative "reducers"
 
 module Jrf
   class RowContext
     MISSING = Object.new
-    ReducerToken = Struct.new(:index)
+
+    attr_writer :__jrf_current_stage
 
     class << self
       def define_reducer(name, &definition)
         define_method(name) do |*args, **kwargs, &block|
           spec = definition.call(self, *args, **kwargs, block: block)
-          create_reducer(
+          @__jrf_current_stage.allocate_reducer(
             spec.fetch(:value),
             initial: reducer_initial_value(spec.fetch(:initial)),
             finish: spec[:finish],
@@ -23,7 +25,7 @@ module Jrf
 
     def initialize(obj = nil)
       @obj = obj
-      @__jrf_stage = nil
+      @__jrf_current_stage = nil
     end
 
     def reset(obj)
@@ -158,34 +160,10 @@ module Jrf
     def reduce(initial, &block)
       raise ArgumentError, "reduce requires a block" unless block
 
-      create_reducer(@obj, initial: initial, &block)
+      @__jrf_current_stage.allocate_reducer(@obj, initial: initial, &block)
     end
 
-    def __jrf_begin_stage__(stage, probing: false)
-      @__jrf_stage = stage
-      stage[:reducer_cursor] = 0
-      stage[:reducer_called] = false
-      stage[:reducer_probing] = probing
-    end
-
-    def __jrf_reducer_called?
-      @__jrf_stage && @__jrf_stage[:reducer_called]
-    end
-
-  private
-
-    def create_reducer(value, initial:, finish: nil, &step_fn)
-      raise "internal error: reducer used outside stage context" unless @__jrf_stage
-
-      reducers = (@__jrf_stage[:reducers] ||= [])
-      idx = @__jrf_stage[:reducer_cursor] || 0
-      finish_rows = finish || ->(acc) { [acc] }
-      reducers[idx] ||= Reducers.reduce(initial, finish: finish_rows, &step_fn)
-      reducers[idx].step(value) unless @__jrf_stage[:reducer_probing]
-      @__jrf_stage[:reducer_cursor] = idx + 1
-      @__jrf_stage[:reducer_called] = true
-      ReducerToken.new(idx)
-    end
+    private
 
     def reducer_initial_value(initial)
       return initial.call if initial.respond_to?(:call)

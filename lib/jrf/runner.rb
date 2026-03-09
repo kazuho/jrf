@@ -5,6 +5,7 @@ require_relative "control"
 require_relative "pipeline_parser"
 require_relative "reducers"
 require_relative "row_context"
+require_relative "stage"
 
 module Jrf
   class Runner
@@ -40,17 +41,17 @@ module Jrf
 
       ctx = RowContext.new
       compiled = compile_stages(stages, ctx)
-      initialize_reducers(compiled, ctx)
+      compiled.each { |stage| stage.call(PROBE_VALUE, probing: true) rescue nil }
       error = nil
 
       begin
         each_input_value do |value|
-          process_value(value, compiled, ctx)
+          process_value(value, compiled)
         end
       rescue StandardError => e
         error = e
       ensure
-        flush_reducers(compiled, ctx)
+        flush_reducers(compiled)
       end
 
       raise error if error
@@ -58,17 +59,17 @@ module Jrf
 
     private
 
-    def process_value(input, stages, ctx)
+    def process_value(input, stages)
       current_values = [input]
 
       stages.each do |stage|
         next_values = []
 
         current_values.each do |value|
-          out = apply_stage(stage, value, ctx)
+          out = stage.call(value)
           if out.equal?(Control::DROPPED)
             next
-          elsif flat_event?(out)
+          elsif out.is_a?(Control::Flat)
             unless out.value.is_a?(Array)
               raise TypeError, "flat expects Array, got #{out.value.class}"
             end
@@ -123,56 +124,14 @@ module Jrf
       raise JSON::ParserError, e.message
     end
 
-    def apply_stage(stage, input, ctx)
-      value = eval_stage(stage, input, ctx)
-      if value.equal?(Control::DROPPED)
-        Control::DROPPED
-      elsif ctx.__jrf_reducer_called?
-        stage[:reducer_template] ||= value
-        Control::DROPPED
-      else
-        value
-      end
-    end
-
-    def eval_stage(stage, input, ctx)
-      ctx.reset(input)
-      ctx.__jrf_begin_stage__(stage, probing: input.equal?(PROBE_VALUE))
-      ctx.public_send(stage[:method_name])
-    end
-
-    def flat_event?(value)
-      value.is_a?(Control::Flat)
-    end
-
-    def flush_reducers(stages, ctx)
-      tail = stages
-      loop do
-        tail = tail.drop_while { |stage| !reducer_stage?(stage) }
-        break if tail.empty?
-
-        stage = tail.first
-        reducers = stage[:reducers]
-        break unless reducers&.any?
-
-        rows = finish_reducer_rows(stage[:reducer_template], reducers)
-        rows.each { |value| process_value(value, tail.drop(1), ctx) }
-        tail = tail.drop(1)
-      end
-    end
-
     def compile_stages(stages, ctx)
       mod = Module.new
-      compiled = []
 
-      stages.each_with_index do |stage, i|
+      stages.each_with_index.map do |stage, i|
         method_name = :"__jrf_stage_#{i}"
         mod.module_eval("def #{method_name}; #{stage[:src]}; end", "(jrf stage #{i})", 1)
-        compiled << stage.merge(method_name: method_name)
-      end
-
-      ctx.extend(mod)
-      compiled
+        Stage.new(ctx, method_name, src: stage[:src])
+      end.tap { ctx.extend(mod) }
     end
 
     def dump_stages(stages)
@@ -181,39 +140,16 @@ module Jrf
       end
     end
 
-    def initialize_reducers(stages, ctx)
-      stages.each do |stage|
-        begin
-          value = eval_stage(stage, PROBE_VALUE, ctx)
-          stage[:reducer_template] ||= value if ctx.__jrf_reducer_called?
-        rescue StandardError
-          # Ignore probe-time errors; reducer will be created on first runtime event.
-        end
-      end
-    end
+    def flush_reducers(stages)
+      tail = stages
+      loop do
+        idx = tail.index(&:reducer?)
+        break unless idx
 
-    def reducer_stage?(stage)
-      stage[:reducers]&.any?
-    end
-
-    def finish_reducer_rows(template, reducers)
-      if template.is_a?(RowContext::ReducerToken)
-        reducers.fetch(template.index).finish
-      else
-        [finish_reducer_template(template, reducers)]
-      end
-    end
-
-    def finish_reducer_template(template, reducers)
-      if template.is_a?(RowContext::ReducerToken)
-        rows = reducers.fetch(template.index).finish
-        rows.length == 1 ? rows.first : rows
-      elsif template.is_a?(Array)
-        template.map { |v| finish_reducer_template(v, reducers) }
-      elsif template.is_a?(Hash)
-        template.transform_values { |v| finish_reducer_template(v, reducers) }
-      else
-        template
+        rows = tail[idx].finish
+        rest = tail.drop(idx + 1)
+        rows.each { |value| process_value(value, rest) }
+        tail = rest
       end
     end
   end
