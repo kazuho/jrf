@@ -30,6 +30,7 @@ module Jrf
       @cursor = 0
       @template = nil
       @mode = nil # nil=unknown, :reducer, :passthrough
+      @map_transforms = {}
     end
 
     def call(input)
@@ -59,6 +60,16 @@ module Jrf
 
     def allocate_map(type, collection, &block)
       idx = @cursor
+      @cursor += 1
+
+      # Transformation mode (detected on first call)
+      if @map_transforms[idx]
+        case type
+        when :array then return collection.map(&block)
+        when :hash then return collection.transform_values(&block)
+        end
+      end
+
       map_reducer = (@reducers[idx] ||= MapReducer.new(type))
 
       case type
@@ -80,7 +91,18 @@ module Jrf
         end
       end
 
-      @cursor += 1
+      # Detect transformation: no reducers were allocated in any slot
+      if @mode.nil? && map_reducer.slots.values.all?(&:empty?)
+        @map_transforms[idx] = true
+        @reducers[idx] = nil
+        case type
+        when :array
+          return map_reducer.templates.sort_by { |k, _| k }.map(&:last)
+        when :hash
+          return map_reducer.templates.dup
+        end
+      end
+
       ReducerToken.new(idx)
     end
 

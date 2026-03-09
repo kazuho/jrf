@@ -571,6 +571,19 @@ stdout, stderr, status = run_jrf('map_values { |v| sum(v) } >> map_values { |v| 
 assert_success(status, stderr, "map_values piped to map_values passthrough")
 assert_equal(['{"a":60,"b":600}'], lines(stdout), "map_values piped output")
 
+# map/map_values transformation (no reducers)
+stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 }', input_map)
+assert_success(status, stderr, "map transform")
+assert_equal(['[2,11,101]', '[3,21,201]', '[4,31,301]'], lines(stdout), "map transform output")
+
+stdout, stderr, status = run_jrf('map_values { |v| v * 2 }', input_map_values)
+assert_success(status, stderr, "map_values transform")
+assert_equal(['{"a":2,"b":20}', '{"a":4,"b":40}', '{"a":6,"b":60}'], lines(stdout), "map_values transform output")
+
+stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 } >> map { |x| x * 10 }', input_map)
+assert_success(status, stderr, "chained map transforms")
+assert_equal(['[20,110,1010]', '[30,210,2010]', '[40,310,3010]'], lines(stdout), "chained map transforms output")
+
 input_gb = <<~NDJSON
   {"status":200,"path":"/a","latency":10}
   {"status":404,"path":"/b","latency":50}
