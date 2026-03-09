@@ -94,6 +94,22 @@ module Jrf
       ReducerToken.new(idx)
     end
 
+    def allocate_group_by(key, &block)
+      idx = @cursor
+      map_reducer = (@reducers[idx] ||= MapReducer.new(:hash))
+
+      unless @probing
+        slot = (map_reducer.slots[key] ||= [])
+        with_scoped_reducers(slot) do
+          result = block.call
+          map_reducer.templates[key] ||= result
+        end
+      end
+
+      @cursor += 1
+      ReducerToken.new(idx)
+    end
+
     def reducer?
       @mode == :reducer
     end

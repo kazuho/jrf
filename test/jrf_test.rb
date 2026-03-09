@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "open3"
 
 def run_jrf(expr, input, *opts)
@@ -561,5 +562,53 @@ assert_equal(['{}'], lines(stdout), "map_values no matches output")
 stdout, stderr, status = run_jrf('map_values { |v| sum(v) } >> map_values { |v| v * 10 }', input_map_values)
 assert_success(status, stderr, "map_values piped to map_values passthrough")
 assert_equal(['{"a":60,"b":600}'], lines(stdout), "map_values piped output")
+
+input_gb = <<~NDJSON
+  {"status":200,"path":"/a","latency":10}
+  {"status":404,"path":"/b","latency":50}
+  {"status":200,"path":"/c","latency":30}
+  {"status":200,"path":"/d","latency":20}
+NDJSON
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { count() }', input_gb)
+assert_success(status, stderr, "group_by with count")
+assert_equal(['{"200":3,"404":1}'], lines(stdout), "group_by with count output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { sum(_["latency"]) }', input_gb)
+assert_success(status, stderr, "group_by with sum")
+assert_equal(['{"200":60,"404":50}'], lines(stdout), "group_by with sum output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { average(_["latency"]) }', input_gb)
+assert_success(status, stderr, "group_by with average")
+result = JSON.parse(lines(stdout).first)
+assert_float_close(20.0, result["200"], 1e-12, "group_by average 200")
+assert_float_close(50.0, result["404"], 1e-12, "group_by average 404")
+
+stdout, stderr, status = run_jrf('group_by(_["status"])', input_gb)
+assert_success(status, stderr, "group_by default (collect rows)")
+result = JSON.parse(lines(stdout).first)
+assert_equal(3, result["200"].length, "group_by default 200 count")
+assert_equal(1, result["404"].length, "group_by default 404 count")
+assert_equal("/a", result["200"][0]["path"], "group_by default first row")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { group(_["path"]) }', input_gb)
+assert_success(status, stderr, "group_by with group(expr)")
+assert_equal(['{"200":["/a","/c","/d"],"404":["/b"]}'], lines(stdout), "group_by with group(expr) output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { min(_["latency"]) }', input_gb)
+assert_success(status, stderr, "group_by with min")
+assert_equal(['{"200":10,"404":50}'], lines(stdout), "group_by with min output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { {total: sum(_["latency"]), n: count()} }', input_gb)
+assert_success(status, stderr, "group_by with multi-reducer")
+assert_equal(['{"200":{"total":60,"n":3},"404":{"total":50,"n":1}}'], lines(stdout), "group_by multi-reducer output")
+
+stdout, stderr, status = run_jrf('select(false) >> group_by(_["status"]) { count() }', input_gb)
+assert_success(status, stderr, "group_by no matches")
+assert_equal(['{}'], lines(stdout), "group_by no matches output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { count() } >> _[200]', input_gb)
+assert_success(status, stderr, "group_by then extract")
+assert_equal(%w[3], lines(stdout), "group_by then extract output")
 
 puts "ok"

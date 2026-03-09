@@ -22,6 +22,9 @@ jrf '_["items"] >> flat'
 
 # Sort rows by key expression
 jrf 'sort(_["at"]) >> _["id"]'
+
+# Group by key and aggregate
+jrf 'group_by(_["status"]) { count() }'
 ```
 
 Build the man page from this README:
@@ -175,6 +178,49 @@ With a block, rows are sorted by custom comparator.
 ```sh
 jrf 'sort(_["at"]) >> _["id"]'
 jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
+```
+
+### map { |x| reducer(x) }
+
+Applies a reducer to each element of an Array, element-wise across rows.
+Each array position gets its own independent reducer instance.
+
+```sh
+jrf 'map { |x| sum(x) }'
+# [1,10], [2,20], [3,30] → [6,60]
+
+jrf '_["values"] >> map { |x| min(x) }'
+```
+
+### map_values { |v| reducer(v) }
+
+Applies a reducer to each value of a Hash, key-wise across rows.
+Each key gets its own independent reducer instance.
+
+```sh
+jrf 'map_values { |v| sum(v) }'
+# {"a":1,"b":10}, {"a":2,"b":20} → {"a":3,"b":30}
+```
+
+### group_by(key_expr)
+### group_by(key_expr) { reducer }
+
+Groups rows by key expression and applies a reducer per group.
+
+Without a block, collects rows into arrays (equivalent to `group_by(key) { group }`).
+
+With a block, applies the given reducer independently per group.
+Inside the block, `_` refers to the current row.
+
+```sh
+jrf 'group_by(_["status"])'
+# → {"200":[...rows...],"404":[...rows...]}
+
+jrf 'group_by(_["status"]) { count() }'
+# → {"200":15,"404":3}
+
+jrf 'group_by(_["status"]) { average(_["latency"]) }'
+# → {"200":42.5,"404":120.0}
 ```
 
 ## LICENSE

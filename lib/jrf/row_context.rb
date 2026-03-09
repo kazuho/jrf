@@ -175,6 +175,11 @@ module Jrf
       @__jrf_current_stage.allocate_map(:hash, @obj, &block)
     end
 
+    def group_by(key, &block)
+      block ||= proc { group }
+      @__jrf_current_stage.allocate_group_by(key, &block)
+    end
+
     private
 
     def reducer_initial_value(initial)
