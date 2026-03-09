@@ -29,8 +29,7 @@ module Jrf
         jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 
       See Also:
-        README.md
-        man jrf
+        https://github.com/kazuho/jrf#readme
     TEXT
 
     def self.run(argv = ARGV, input: ARGF, out: $stdout, err: $stderr)

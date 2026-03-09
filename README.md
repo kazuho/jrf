@@ -28,13 +28,6 @@ jrf 'sort(_["at"]) >> _["id"]'
 jrf 'group_by(_["status"]) { count() }'
 ```
 
-Build the man page from this README:
-
-```sh
-rake man
-man -l man/jrf.1
-```
-
 ## WHY RUBY?
 
 No need to learn a new programming language! Just use Ruby to:
