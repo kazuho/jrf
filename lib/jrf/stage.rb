@@ -40,7 +40,7 @@ module Jrf
       result = @ctx.public_send(@method_name)
       @template ||= result if @used_reducer
 
-      (@used_reducer || active_reducers?) ? Control::DROPPED : result
+      @used_reducer ? Control::DROPPED : result
     end
 
     def allocate_reducer(value, initial:, finish: nil, &step_fn)
@@ -79,7 +79,7 @@ module Jrf
         end
 
       @cursor += 1
-      map_reducer.active? ? ReducerToken.new(idx) : result
+      @used_reducer ? ReducerToken.new(idx) : result
     end
 
     def allocate_group_by(key, &block)
@@ -88,19 +88,19 @@ module Jrf
       row = @ctx._
       slot = map_reducer.slot(key)
       result, reducer_used = with_scoped_reducers(slot.reducers) { block.call(row) }
-      slot.template ||= result if reducer_used
+      slot.template ||= result
       slot.value = result unless reducer_used
-      slot.forced = true
+      @used_reducer = true
       @cursor += 1
       ReducerToken.new(idx)
     end
 
     def reducer?
-      active_reducers?
+      !@reducers.empty?
     end
 
     def finish
-      return [] unless active_reducers? && @template
+      return [] if @reducers.empty? || @template.nil?
 
       rows = if @template.is_a?(ReducerToken)
         @reducers.fetch(@template.index).finish
@@ -113,10 +113,6 @@ module Jrf
     end
 
     private
-
-    def active_reducers?
-      @reducers.any?(&:active?)
-    end
 
     def with_scoped_reducers(reducer_list)
       saved_reducers = @reducers
@@ -144,10 +140,6 @@ module Jrf
         @slots[key] ||= SlotState.new
       end
 
-      def active?
-        @slots.values.any?(&:active?)
-      end
-
       def finish
         case @type
         when :array
@@ -162,19 +154,14 @@ module Jrf
 
       class SlotState
         attr_reader :reducers
-        attr_accessor :template, :value, :forced
+        attr_accessor :template, :value
 
         def initialize
           @reducers = []
-          @forced = false
-        end
-
-        def active?
-          @forced || @reducers.any?(&:active?)
         end
 
         def output
-          if @reducers.any?(&:active?)
+          if @template
             Stage.resolve_template(@template, @reducers)
           else
             @value
