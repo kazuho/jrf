@@ -22,18 +22,6 @@ module Jrf
       end
     end
 
-    def self.reducer_token?(value)
-      if value.is_a?(ReducerToken)
-        true
-      elsif value.is_a?(Array)
-        value.any? { |v| reducer_token?(v) }
-      elsif value.is_a?(Hash)
-        value.any? { |_k, v| reducer_token?(v) }
-      else
-        false
-      end
-    end
-
     def initialize(ctx, method_name, src: nil)
       @ctx = ctx
       @method_name = method_name
@@ -41,16 +29,18 @@ module Jrf
       @reducers = []
       @cursor = 0
       @template = nil
+      @used_reducer = false
     end
 
     def call(input)
       @ctx.reset(input)
       @cursor = 0
+      @used_reducer = false
       @ctx.__jrf_current_stage = self
       result = @ctx.public_send(@method_name)
-      @template ||= result if self.class.reducer_token?(result)
+      @template ||= result if @used_reducer
 
-      self.class.reducer_token?(result) ? Control::DROPPED : result
+      @used_reducer ? Control::DROPPED : result
     end
 
     def allocate_reducer(value, initial:, finish: nil, &step_fn)
@@ -58,6 +48,7 @@ module Jrf
       finish_rows = finish || ->(acc) { [acc] }
       @reducers[idx] ||= Reducers.reduce(initial, finish: finish_rows, &step_fn)
       @reducers[idx].step(value)
+      @used_reducer = true
       @cursor += 1
       ReducerToken.new(idx)
     end
@@ -71,30 +62,24 @@ module Jrf
           raise TypeError, "map expects Array, got #{collection.class}" unless collection.is_a?(Array)
           collection.each_with_index.map do |v, i|
             slot = map_reducer.slot(i)
-            slot_result = with_scoped_reducers(slot.reducers) { block.call(v) }
-            if self.class.reducer_token?(slot_result)
-              slot.template ||= slot_result
-            else
-              slot.value = slot_result
-            end
-            slot_result
+            slot_result, reducer_used = with_scoped_reducers(slot.reducers) { block.call(v) }
+            slot.template ||= slot_result if reducer_used
+            slot.value = slot_result unless reducer_used
+            slot.output
           end
         when :hash
           raise TypeError, "map_values expects Hash, got #{collection.class}" unless collection.is_a?(Hash)
           collection.each_with_object({}) do |(k, v), acc|
             slot = map_reducer.slot(k)
-            slot_result = with_scoped_reducers(slot.reducers) { block.call(v) }
-            if self.class.reducer_token?(slot_result)
-              slot.template ||= slot_result
-            else
-              slot.value = slot_result
-            end
-            acc[k] = slot_result
+            slot_result, reducer_used = with_scoped_reducers(slot.reducers) { block.call(v) }
+            slot.template ||= slot_result if reducer_used
+            slot.value = slot_result unless reducer_used
+            acc[k] = slot.output
           end
         end
 
       @cursor += 1
-      self.class.reducer_token?(result) ? ReducerToken.new(idx) : result
+      @used_reducer ? ReducerToken.new(idx) : result
     end
 
     def allocate_group_by(key, &block)
@@ -102,8 +87,9 @@ module Jrf
       map_reducer = (@reducers[idx] ||= MapReducer.new(:hash))
       row = @ctx._
       slot = map_reducer.slot(key)
-      result = with_scoped_reducers(slot.reducers) { block.call(row) }
+      result, reducer_used = with_scoped_reducers(slot.reducers) { block.call(row) }
       slot.template ||= result
+      slot.value = result unless reducer_used
       @cursor += 1
       ReducerToken.new(idx)
     end
@@ -130,12 +116,17 @@ module Jrf
     def with_scoped_reducers(reducer_list)
       saved_reducers = @reducers
       saved_cursor = @cursor
+      saved_used_reducer = @used_reducer
       @reducers = reducer_list
       @cursor = 0
-      yield
+      @used_reducer = false
+      result = yield
+      reducer_used = @used_reducer
+      [result, reducer_used]
     ensure
       @reducers = saved_reducers
       @cursor = saved_cursor
+      @used_reducer = saved_used_reducer || reducer_used
     end
 
     class MapReducer
