@@ -194,6 +194,10 @@ stdout, stderr, status = run_jrf('select(_["x"] > 10) >> sum(_["foo"])', input_s
 assert_success(status, stderr, "select + sum")
 assert_equal(%w[9], lines(stdout), "select + sum output")
 
+stdout, stderr, status = run_jrf('{total: sum(_["foo"]), n: count()}', input_sum)
+assert_success(status, stderr, "structured reducer result")
+assert_equal(['{"total":10,"n":4}'], lines(stdout), "structured reducer result output")
+
 stdout, stderr, status = run_jrf('average(_["foo"])', input_sum)
 assert_success(status, stderr, "average")
 assert_float_close(2.5, lines(stdout).first.to_f, 1e-12, "average output")

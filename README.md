@@ -181,26 +181,34 @@ jrf 'sort(_["at"]) >> _["id"]'
 jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
 ```
 
-### map { |x| reducer(x) }
+### map { |x| expr }
 
-Applies a reducer to each element of an Array, element-wise across rows.
-Each array position gets its own independent reducer instance.
+Maps each element of an Array.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the element.
 
+If the block is a plain expression, `map` behaves like a regular per-row transform.
+If the block calls reducers, each array position gets its own independent reducer instance across rows.
+
 ```sh
+jrf 'map { |x| x + 1 }'
+
 jrf 'map { |x| sum(x) }'
 # [1,10], [2,20], [3,30] → [6,60]
 
 jrf '_["values"] >> map { |x| min(x) }'
 ```
 
-### map_values { |v| reducer(v) }
+### map_values { |v| expr }
 
-Applies a reducer to each value of a Hash, key-wise across rows.
-Each key gets its own independent reducer instance.
+Maps each value of a Hash.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the value.
 
+If the block is a plain expression, `map_values` behaves like a regular per-row transform.
+If the block calls reducers, each key gets its own independent reducer instance across rows.
+
 ```sh
+jrf 'map_values { |v| v * 10 }'
+
 jrf 'map_values { |v| sum(v) }'
 # {"a":1,"b":10}, {"a":2,"b":20} → {"a":3,"b":30}
 ```
