@@ -124,15 +124,12 @@ module Jrf
     end
 
     def flush_reducers(stages)
-      tail = stages
-      loop do
-        idx = tail.index(&:reducer?)
-        break unless idx
+      stages.each_with_index do |stage, idx|
+        rows = stage.finish
+        next if rows.empty?
 
-        rows = tail[idx].finish
-        rest = tail.drop(idx + 1)
+        rest = stages.drop(idx + 1)
         rows.each { |value| process_value(value, rest) }
-        tail = rest
       end
     end
   end
