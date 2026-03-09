@@ -13,6 +13,14 @@ module Jrf
       @stages = blocks.map { |block| Stage.new(@ctx, block, src: nil) }
     end
 
+    # Run the pipeline on an enumerable of input values.
+    #
+    # Without a block, returns an Array of output values.
+    # With a block, streams each output value to the block.
+    #
+    # @param input [Enumerable] input values to process
+    # @yieldparam value output value
+    # @return [Array, nil] output values (without block), or nil (with block)
     def call(input, &on_output)
       if on_output
         call_streaming(input, &on_output)
