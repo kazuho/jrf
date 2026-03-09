@@ -95,7 +95,7 @@ module Jrf
       unless @probing
         slot = (map_reducer.slots[key] ||= [])
         with_scoped_reducers(slot) do
-          result = block.call
+          result = block.call(@ctx._)
           map_reducer.templates[key] ||= result
         end
       end

@@ -205,14 +205,14 @@ jrf 'map_values { |v| sum(v) }'
 ```
 
 ### group_by(key_expr)
-### group_by(key_expr) { reducer }
+### group_by(key_expr) { |row| reducer }
 
 Groups rows by key expression and applies a reducer per group.
 
 Without a block, collects rows into arrays (equivalent to `group_by(key) { group }`).
 
 With a block, applies the given reducer independently per group.
-Inside the block, `_` refers to the current row.
+Inside the block, use the block argument (`row`) for the current row.
 
 ```sh
 jrf 'group_by(_["status"])'
@@ -221,7 +221,7 @@ jrf 'group_by(_["status"])'
 jrf 'group_by(_["status"]) { count() }'
 # → {"200":15,"404":3}
 
-jrf 'group_by(_["status"]) { average(_["latency"]) }'
+jrf 'group_by(_["status"]) { |row| average(row["latency"]) }'
 # → {"200":42.5,"404":120.0}
 ```
 

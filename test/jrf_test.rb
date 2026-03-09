@@ -582,11 +582,11 @@ stdout, stderr, status = run_jrf('group_by(_["status"]) { count() }', input_gb)
 assert_success(status, stderr, "group_by with count")
 assert_equal(['{"200":3,"404":1}'], lines(stdout), "group_by with count output")
 
-stdout, stderr, status = run_jrf('group_by(_["status"]) { sum(_["latency"]) }', input_gb)
+stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| sum(row["latency"]) }', input_gb)
 assert_success(status, stderr, "group_by with sum")
 assert_equal(['{"200":60,"404":50}'], lines(stdout), "group_by with sum output")
 
-stdout, stderr, status = run_jrf('group_by(_["status"]) { average(_["latency"]) }', input_gb)
+stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| average(row["latency"]) }', input_gb)
 assert_success(status, stderr, "group_by with average")
 result = JSON.parse(lines(stdout).first)
 assert_float_close(20.0, result["200"], 1e-12, "group_by average 200")
@@ -603,13 +603,17 @@ stdout, stderr, status = run_jrf('group_by(_["status"]) { group(_["path"]) }', i
 assert_success(status, stderr, "group_by with group(expr)")
 assert_equal(['{"200":["/a","/c","/d"],"404":["/b"]}'], lines(stdout), "group_by with group(expr) output")
 
-stdout, stderr, status = run_jrf('group_by(_["status"]) { min(_["latency"]) }', input_gb)
+stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| min(row["latency"]) }', input_gb)
 assert_success(status, stderr, "group_by with min")
 assert_equal(['{"200":10,"404":50}'], lines(stdout), "group_by with min output")
 
-stdout, stderr, status = run_jrf('group_by(_["status"]) { {total: sum(_["latency"]), n: count()} }', input_gb)
+stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| {total: sum(row["latency"]), n: count()} }', input_gb)
 assert_success(status, stderr, "group_by with multi-reducer")
 assert_equal(['{"200":{"total":60,"n":3},"404":{"total":50,"n":1}}'], lines(stdout), "group_by multi-reducer output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| count(row["path"]) }', input_gb)
+assert_success(status, stderr, "group_by explicit row arg")
+assert_equal(['{"200":3,"404":1}'], lines(stdout), "group_by explicit row arg output")
 
 stdout, stderr, status = run_jrf('select(false) >> group_by(_["status"]) { count() }', input_gb)
 assert_success(status, stderr, "group_by no matches")
