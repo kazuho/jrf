@@ -100,8 +100,7 @@ assert_includes(stdout, "Pipeline:")
 assert_includes(stdout, "Connect stages with top-level >>.")
 assert_includes(stdout, "The current value in each stage is available as _.")
 assert_includes(stdout, "See Also:")
-assert_includes(stdout, "README.md")
-assert_includes(stdout, "man jrf")
+assert_includes(stdout, "https://github.com/kazuho/jrf#readme")
 assert_equal([], lines(stderr), "help stderr output")
 
 stdout, stderr, status = run_jrf('select(_["hello"] == 123) >> _["hello"]', input_hello, "--verbose")
@@ -655,5 +654,68 @@ assert_equal([], lines(stdout), "group_by no matches output")
 stdout, stderr, status = run_jrf('group_by(_["status"]) { count() } >> _[200]', input_gb)
 assert_success(status, stderr, "group_by then extract")
 assert_equal(%w[3], lines(stdout), "group_by then extract output")
+
+# === Library API (Jrf.new) ===
+
+require_relative "../lib/jrf"
+
+# passthrough
+j = Jrf.new(proc { _ })
+assert_equal([{"a" => 1}, {"a" => 2}], j.call([{"a" => 1}, {"a" => 2}]), "library passthrough")
+
+# extract
+j = Jrf.new(proc { _["a"] })
+assert_equal([1, 2], j.call([{"a" => 1}, {"a" => 2}]), "library extract")
+
+# select + extract (two stages)
+j = Jrf.new(
+  proc { select(_["a"] > 1) },
+  proc { _["a"] }
+)
+assert_equal([2, 3], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library select + extract")
+
+# sum
+j = Jrf.new(proc { sum(_["a"]) })
+assert_equal([6], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library sum")
+
+# sum with literal on left
+j = Jrf.new(proc { sum(2 * _["a"]) })
+assert_equal([12], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library sum literal on left")
+
+# structured reducers
+j = Jrf.new(proc { {total: sum(_["a"]), n: count()} })
+assert_equal([{total: 6, n: 3}], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library structured reducers")
+
+# map transform
+j = Jrf.new(proc { map { |x| x + 1 } })
+assert_equal([[2, 3], [4, 5]], j.call([[1, 2], [3, 4]]), "library map transform")
+
+# map reduce
+j = Jrf.new(proc { map { |x| sum(x) } })
+assert_equal([[4, 6]], j.call([[1, 2], [3, 4]]), "library map reduce")
+
+# map_values transform
+j = Jrf.new(proc { map_values { |v| v * 10 } })
+assert_equal([{"a" => 10, "b" => 20}], j.call([{"a" => 1, "b" => 2}]), "library map_values transform")
+
+# group_by
+j = Jrf.new(proc { group_by(_["k"]) { count() } })
+assert_equal([{"x" => 2, "y" => 1}], j.call([{"k" => "x"}, {"k" => "x"}, {"k" => "y"}]), "library group_by")
+
+# reducer then passthrough
+j = Jrf.new(
+  proc { sum(_["a"]) },
+  proc { _ + 1 }
+)
+assert_equal([7], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library reducer then passthrough")
+
+# closure over local variables
+threshold = 2
+j = Jrf.new(proc { select(_["a"] > threshold) })
+assert_equal([{"a" => 3}], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library closure")
+
+# empty input
+j = Jrf.new(proc { sum(_) })
+assert_equal([], j.call([]), "library empty input")
 
 puts "ok"

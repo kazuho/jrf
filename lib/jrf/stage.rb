@@ -7,7 +7,7 @@ module Jrf
   class Stage
     ReducerToken = Struct.new(:index)
 
-    attr_reader :method_name, :src
+    attr_reader :src
 
     def self.resolve_template(template, reducers)
       if template.is_a?(ReducerToken)
@@ -22,9 +22,9 @@ module Jrf
       end
     end
 
-    def initialize(ctx, method_name, src: nil)
+    def initialize(ctx, block, src: nil)
       @ctx = ctx
-      @method_name = method_name
+      @block = block
       @src = src
       @reducers = []
       @cursor = 0
@@ -37,7 +37,7 @@ module Jrf
       @ctx.reset(input)
       @cursor = 0
       @ctx.__jrf_current_stage = self
-      result = @ctx.public_send(@method_name)
+      result = @ctx.instance_eval(&@block)
 
       if @mode.nil? && @reducers.any?
         @mode = :reducer

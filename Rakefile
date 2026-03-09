@@ -8,8 +8,3 @@ Rake::TestTask.new do |t|
 end
 
 task default: :test
-
-desc "Build man/jrf.1 from README.md"
-task :man do
-  ruby "script/build_man_from_readme.rb"
-end

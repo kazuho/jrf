@@ -1,11 +1,8 @@
 # frozen_string_literal: true
 
 require "json"
-require_relative "control"
+require_relative "pipeline"
 require_relative "pipeline_parser"
-require_relative "reducers"
-require_relative "row_context"
-require_relative "stage"
 
 module Jrf
   class Runner
@@ -24,53 +21,18 @@ module Jrf
       stages = parsed[:stages]
       dump_stages(stages) if verbose
 
-      ctx = RowContext.new
-      compiled = compile_stages(stages, ctx)
-      error = nil
+      blocks = stages.map { |stage|
+        eval("proc { #{stage[:src]} }", nil, "(jrf stage)", 1) # rubocop:disable Security/Eval
+      }
+      pipeline = Pipeline.new(*blocks)
 
-      begin
-        each_input_value do |value|
-          process_value(value, compiled)
-        end
-      rescue StandardError => e
-        error = e
-      ensure
-        flush_reducers(compiled)
-      end
-
-      raise error if error
-    end
-
-    private
-
-    def process_value(input, stages)
-      current_values = [input]
-
-      stages.each do |stage|
-        next_values = []
-
-        current_values.each do |value|
-          out = stage.call(value)
-          if out.equal?(Control::DROPPED)
-            next
-          elsif out.is_a?(Control::Flat)
-            unless out.value.is_a?(Array)
-              raise TypeError, "flat expects Array, got #{out.value.class}"
-            end
-            next_values.concat(out.value)
-          else
-            next_values << out
-          end
-        end
-
-        return if next_values.empty?
-        current_values = next_values
-      end
-
-      current_values.each do |value|
+      input_enum = Enumerator.new { |y| each_input_value { |v| y << v } }
+      pipeline.call(input_enum) do |value|
         @out.puts(@pretty ? JSON.pretty_generate(value) : JSON.generate(value))
       end
     end
+
+    private
 
     def each_input_value
       return each_input_value_lax { |value| yield value } if @lax
@@ -110,29 +72,9 @@ module Jrf
       raise JSON::ParserError, e.message
     end
 
-    def compile_stages(stages, ctx)
-      mod = Module.new
-
-      stages.each_with_index.map do |stage, i|
-        method_name = :"__jrf_stage_#{i}"
-        mod.module_eval("def #{method_name}; #{stage[:src]}; end", "(jrf stage #{i})", 1)
-        Stage.new(ctx, method_name, src: stage[:src])
-      end.tap { ctx.extend(mod) }
-    end
-
     def dump_stages(stages)
       stages.each_with_index do |stage, i|
         @err.puts "stage[#{i}]: #{stage[:src]}"
-      end
-    end
-
-    def flush_reducers(stages)
-      stages.each_with_index do |stage, idx|
-        rows = stage.finish
-        next if rows.empty?
-
-        rest = stages.drop(idx + 1)
-        rows.each { |value| process_value(value, rest) }
       end
     end
   end

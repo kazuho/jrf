@@ -28,13 +28,6 @@ jrf 'sort(_["at"]) >> _["id"]'
 jrf 'group_by(_["status"]) { count() }'
 ```
 
-Build the man page from this README:
-
-```sh
-rake man
-man -l man/jrf.1
-```
-
 ## WHY RUBY?
 
 No need to learn a new programming language! Just use Ruby to:
@@ -234,6 +227,38 @@ jrf 'group_by(_["status"]) { count() }'
 
 jrf 'group_by(_["status"]) { |row| average(row["latency"]) }'
 # → {"200":42.5,"404":120.0}
+```
+
+## RUBY LIBRARY
+
+`jrf` can also be used as a Ruby library. Create a pipeline with `Jrf.new`, passing one or more procs as stages. The returned object is callable.
+
+```ruby
+require "jrf"
+
+# Extract and filter
+j = Jrf.new(
+  proc { select(_["status"] == 200) },
+  proc { _["path"] }
+)
+j.call(input_array)  # => ["/a", "/c", "/d"]
+
+# Aggregate
+j = Jrf.new(proc { {total: sum(_["price"]), n: count()} })
+j.call(input_array)  # => [{total: 1250, n: 42}]
+
+# Local variables are captured via closure
+threshold = 10
+j = Jrf.new(proc { select(_["x"] > threshold) })
+```
+
+Inside each proc, `_` is the current value and all built-in functions documented above are available.
+
+The pipeline streams output when a block is given:
+
+```ruby
+j = Jrf.new(proc { _["id"] })
+j.call(input_array) { |value| puts value }
 ```
 
 ## LICENSE
