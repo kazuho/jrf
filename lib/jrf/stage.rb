@@ -30,20 +30,18 @@ module Jrf
       @cursor = 0
       @template = nil
       @mode = nil # nil=unknown, :reducer, :passthrough
-      @probing = false
     end
 
-    def call(input, probing: false)
+    def call(input)
       @ctx.reset(input)
       @cursor = 0
-      @probing = probing
       @ctx.__jrf_current_stage = self
       result = @ctx.public_send(@method_name)
 
       if @mode.nil? && @reducers.any?
         @mode = :reducer
         @template = result
-      elsif @mode.nil? && !probing
+      elsif @mode.nil?
         @mode = :passthrough
       end
 
@@ -54,7 +52,7 @@ module Jrf
       idx = @cursor
       finish_rows = finish || ->(acc) { [acc] }
       @reducers[idx] ||= Reducers.reduce(initial, finish: finish_rows, &step_fn)
-      @reducers[idx].step(value) unless @probing
+      @reducers[idx].step(value)
       @cursor += 1
       ReducerToken.new(idx)
     end
@@ -63,23 +61,21 @@ module Jrf
       idx = @cursor
       map_reducer = (@reducers[idx] ||= MapReducer.new(type))
 
-      unless @probing
-        case type
-        when :array
-          raise TypeError, "map expects Array, got #{collection.class}" unless collection.is_a?(Array)
-          collection.each_with_index do |v, i|
-            with_scoped_reducers(map_reducer.slots[i] ||= []) do
-              result = block.call(v)
-              map_reducer.templates[i] ||= result
-            end
+      case type
+      when :array
+        raise TypeError, "map expects Array, got #{collection.class}" unless collection.is_a?(Array)
+        collection.each_with_index do |v, i|
+          with_scoped_reducers(map_reducer.slots[i] ||= []) do
+            result = block.call(v)
+            map_reducer.templates[i] ||= result
           end
-        when :hash
-          raise TypeError, "map_values expects Hash, got #{collection.class}" unless collection.is_a?(Hash)
-          collection.each do |k, v|
-            with_scoped_reducers(map_reducer.slots[k] ||= []) do
-              result = block.call(v)
-              map_reducer.templates[k] ||= result
-            end
+        end
+      when :hash
+        raise TypeError, "map_values expects Hash, got #{collection.class}" unless collection.is_a?(Hash)
+        collection.each do |k, v|
+          with_scoped_reducers(map_reducer.slots[k] ||= []) do
+            result = block.call(v)
+            map_reducer.templates[k] ||= result
           end
         end
       end
@@ -92,13 +88,11 @@ module Jrf
       idx = @cursor
       map_reducer = (@reducers[idx] ||= MapReducer.new(:hash))
 
-      unless @probing
-        row = @ctx._
-        slot = (map_reducer.slots[key] ||= [])
-        with_scoped_reducers(slot) do
-          result = block.call(row)
-          map_reducer.templates[key] ||= result
-        end
+      row = @ctx._
+      slot = (map_reducer.slots[key] ||= [])
+      with_scoped_reducers(slot) do
+        result = block.call(row)
+        map_reducer.templates[key] ||= result
       end
 
       @cursor += 1
