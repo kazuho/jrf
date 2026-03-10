@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "cli/runner"
+require_relative "cli/input"
 
 module Jrf
   class CLI
@@ -17,6 +18,8 @@ module Jrf
         -p, --pretty   pretty-print JSON output instead of compact NDJSON
         --atomic-write-bytes N
                        group short outputs into atomic writes of up to N bytes
+        --auto-decompress
+                       auto-decompress .gz input files
         -h, --help     show this help and exit
 
       Pipeline:
@@ -39,6 +42,7 @@ module Jrf
       lax = false
       pretty = false
       atomic_write_bytes = Runner::DEFAULT_OUTPUT_BUFFER_LIMIT
+      auto_decompress = false
 
       while argv.first&.start_with?("-")
         case argv.first
@@ -59,6 +63,9 @@ module Jrf
           argv.shift
           atomic_write_bytes = parse_atomic_write_bytes(argv.shift, err)
           return 1 unless atomic_write_bytes
+        when "--auto-decompress"
+          auto_decompress = true
+          argv.shift
         when "-h", "--help"
           out.puts HELP_TEXT
           return 0
@@ -75,8 +82,9 @@ module Jrf
       end
 
       expression = argv.shift
+      cli_input = Input.new(argv, stdin: input, auto_decompress: auto_decompress)
       Runner.new(
-        input: input,
+        input: cli_input,
         out: out,
         err: err,
         lax: lax,

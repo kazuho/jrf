@@ -3,6 +3,8 @@
 require "json"
 require "open3"
 require "stringio"
+require "tmpdir"
+require "zlib"
 require_relative "../lib/jrf/cli/runner"
 
 def run_jrf(expr, input, *opts)
@@ -116,6 +118,7 @@ assert_includes(stdout, "JSON filter with the power and speed of Ruby.")
 assert_includes(stdout, "--lax")
 assert_includes(stdout, "--pretty")
 assert_includes(stdout, "--atomic-write-bytes N")
+assert_includes(stdout, "--auto-decompress")
 assert_includes(stdout, "Pipeline:")
 assert_includes(stdout, "Connect stages with top-level >>.")
 assert_includes(stdout, "The current value in each stage is available as _.")
@@ -159,6 +162,21 @@ assert_equal(%w[123 456], lines(stdout), "atomic write bytes equals form output"
 stdout, stderr, status = Open3.capture3("./exe/jrf", "--atomic-write-bytes", "0", '_["hello"]', stdin_data: input_hello)
 assert_failure(status, "atomic write bytes rejects zero")
 assert_includes(stderr, "--atomic-write-bytes requires a positive integer")
+
+Dir.mktmpdir do |dir|
+  gz_path = File.join(dir, "input.ndjson.gz")
+  Zlib::GzipWriter.open(gz_path) do |io|
+    io.write("{\"foo\":10}\n{\"foo\":20}\n")
+  end
+
+  stdout, stderr, status = Open3.capture3("./exe/jrf", '_["foo"]', gz_path)
+  assert_failure(status, "compressed input without auto-decompress")
+  assert_includes(stderr, "JSON::ParserError")
+
+  stdout, stderr, status = Open3.capture3("./exe/jrf", "--auto-decompress", '_["foo"]', gz_path)
+  assert_success(status, stderr, "compressed input with auto-decompress")
+  assert_equal(%w[10 20], lines(stdout), "compressed input output")
+end
 
 stdout, stderr, status = run_jrf('_', input_hello, "--pretty")
 assert_success(status, stderr, "pretty output")
