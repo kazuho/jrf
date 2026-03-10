@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "zlib"
 require_relative "../pipeline"
 require_relative "../pipeline_parser"
 
@@ -28,8 +29,10 @@ module Jrf
         end
       end
 
-      def initialize(input: ARGF, out: $stdout, err: $stderr, lax: false, pretty: false, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
-        @input = input
+      def initialize(paths: [], stdin: ARGF, sources: nil, out: $stdout, err: $stderr, lax: false, pretty: false, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
+        @paths = paths.dup
+        @stdin = stdin
+        @sources = sources
         @out = out
         @err = err
         @lax = lax
@@ -65,7 +68,7 @@ module Jrf
       end
 
       def each_input_value_ndjson
-        @input.each_source do |source|
+        each_input_source do |source|
           source.each_line do |raw_line|
             line = raw_line.strip
             next if line.empty?
@@ -89,7 +92,7 @@ module Jrf
           def array_append(array, value) = array << value
           def add_value(value) = @emit.call(value)
         end
-        @input.each_source do |source|
+        each_input_source do |source|
           Oj.sc_parse(handler.new { |value| yield value }, RsNormalizer.new(source))
         end
       rescue LoadError
@@ -101,6 +104,29 @@ module Jrf
       def dump_stages(stages)
         stages.each_with_index do |stage, i|
           @err.puts "stage[#{i}]: #{stage[:src]}"
+        end
+      end
+
+      def each_input_source
+        return @sources.each_source { |source| yield source } if @sources
+
+        if @paths.empty?
+          yield @stdin
+          return
+        end
+
+        @paths.each do |path|
+          if path == "-"
+            yield @stdin
+          elsif path.end_with?(".gz")
+            Zlib::GzipReader.open(path) do |source|
+              yield source
+            end
+          else
+            File.open(path, "rb") do |source|
+              yield source
+            end
+          end
         end
       end
 

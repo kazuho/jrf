@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require_relative "cli/runner"
-require_relative "cli/input"
 
 module Jrf
   class CLI
@@ -76,9 +75,9 @@ module Jrf
       end
 
       expression = argv.shift
-      cli_input = Input.new(argv, stdin: input)
       Runner.new(
-        input: cli_input,
+        paths: argv,
+        stdin: input,
         out: out,
         err: err,
         lax: lax,
