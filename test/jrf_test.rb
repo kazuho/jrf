@@ -1,5 +1,11 @@
 # frozen_string_literal: true
 
+begin
+  require "bundler/setup"
+rescue LoadError
+  # Allow running tests in plain Ruby environments with globally installed gems.
+end
+
 require "json"
 require "open3"
 require "stringio"
