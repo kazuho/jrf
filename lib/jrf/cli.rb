@@ -60,28 +60,24 @@ module Jrf
           end
           opts.on("-V", "--version", "show version and exit") do
             out.puts Jrf::VERSION
-            throw :jrf_cli_exit, 0
+            exit
           end
           opts.on("-h", "--help", "show this help and exit") do
             out.puts HELP_TEXT
-            throw :jrf_cli_exit, 0
+            exit
           end
         end
 
-        result = catch(:jrf_cli_exit) do
-          parser.order!(argv)
-          :continue
-        end
-        return result unless result == :continue
+        parser.order!(argv)
       rescue OptionParser::ParseError => e
         err.puts e.message
         err.puts USAGE
-        return 1
+        exit 1
       end
 
       if argv.empty?
         err.puts USAGE
-        return 1
+        exit 1
       end
 
       expression = argv.shift
@@ -115,7 +111,6 @@ module Jrf
         pretty: pretty,
         atomic_write_bytes: atomic_write_bytes
       ).run(expression, verbose: verbose)
-      0
     end
 
     def self.enable_yjit
