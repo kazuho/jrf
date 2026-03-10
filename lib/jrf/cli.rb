@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "runner"
+require_relative "cli/runner"
 
 module Jrf
   class CLI

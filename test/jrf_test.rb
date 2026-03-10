@@ -2,6 +2,8 @@
 
 require "json"
 require "open3"
+require "stringio"
+require_relative "../lib/jrf/cli/runner"
 
 def run_jrf(expr, input, *opts)
   Open3.capture3("./exe/jrf", *opts, expr, stdin_data: input)
@@ -39,6 +41,21 @@ end
 
 def lines(str)
   str.lines.map(&:strip).reject(&:empty?)
+end
+
+class RecordingRunner < Jrf::CLI::Runner
+  attr_reader :writes
+
+  def initialize(**kwargs)
+    super
+    @writes = []
+  end
+
+  private
+
+  def write_output(str)
+    @writes << str
+  end
 end
 
 File.chmod(0o755, "./exe/jrf")
@@ -102,6 +119,22 @@ assert_includes(stdout, "The current value in each stage is available as _.")
 assert_includes(stdout, "See Also:")
 assert_includes(stdout, "https://github.com/kazuho/jrf#readme")
 assert_equal([], lines(stderr), "help stderr output")
+
+threshold_input = StringIO.new((1..4).map { |i| "{\"foo\":\"#{'x' * 1020}\",\"i\":#{i}}\n" }.join)
+buffered_runner = RecordingRunner.new(input: threshold_input, out: StringIO.new, err: StringIO.new)
+buffered_runner.run('_')
+expected_line = JSON.generate({"foo" => "x" * 1020, "i" => 1}) + "\n"
+assert_equal(2, buffered_runner.writes.length, "buffer flushes around 4KB threshold")
+assert_equal(expected_line.bytesize * 3, buffered_runner.writes[0].bytesize, "buffer keeps records until next append would exceed threshold")
+assert_equal(expected_line.bytesize, buffered_runner.writes[1].bytesize, "final buffer flush emits remaining records")
+
+error_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: StringIO.new)
+begin
+  error_runner.run('_["foo"]')
+  raise "expected parse error for buffered flush test"
+rescue JSON::ParserError
+  assert_equal(["1\n"], error_runner.writes, "buffer flushes pending output before parse errors escape")
+end
 
 stdout, stderr, status = run_jrf('select(_["hello"] == 123) >> _["hello"]', input_hello, "--verbose")
 assert_success(status, stderr, "dump stages verbose alias")

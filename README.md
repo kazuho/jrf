@@ -74,6 +74,7 @@ Give it a try — install via RubyGems: `gem install jrf`
 - `--lax` allows multiline JSON texts and parses whitespace-delimited streams (also detects RS `0x1e` for JSON-SEQ).
 - Output is NDJSON (one compact JSON value per line).
 - `--pretty` pretty-prints each output JSON value.
+- Short outputs are grouped into atomic writes, allowing safe use with parallel pipelines such as `xargs -P`.
 
 ## BUILT-IN FUNCTIONS
 
