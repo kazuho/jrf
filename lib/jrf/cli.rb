@@ -8,6 +8,35 @@ require_relative "version"
 module Jrf
   class CLI
     USAGE = "usage: jrf [options] 'STAGE >> STAGE >> ...'"
+    HELP_TEXT = <<~'TEXT'
+      usage: jrf [options] 'STAGE >> STAGE >> ...'
+
+      JSON filter with the power and speed of Ruby.
+
+      Options:
+        -v, --verbose  print parsed stage expressions
+        --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
+        -p, --pretty   pretty-print JSON output instead of compact NDJSON
+        --no-jit       do not enable YJIT, even when supported by the Ruby runtime
+        --atomic-write-bytes N
+                       group short outputs into atomic writes of up to N bytes
+        -V, --version  show version and exit
+        -h, --help     show this help and exit
+
+      Pipeline:
+        Connect stages with top-level >>.
+        The current value in each stage is available as _.
+
+      Examples:
+        jrf '_["foo"]'
+        jrf 'select(_["x"] > 10) >> _["foo"]'
+        jrf '_["items"] >> flat'
+        jrf 'sort(_["at"]) >> _["id"]'
+        jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
+
+      See Also:
+        https://github.com/kazuho/jrf#readme
+    TEXT
 
     def self.run(argv = ARGV, input: ARGF, out: $stdout, err: $stderr)
       verbose = false
@@ -15,14 +44,24 @@ module Jrf
       pretty = false
       jit = true
       atomic_write_bytes = Runner::DEFAULT_OUTPUT_BUFFER_LIMIT
-      parser = build_option_parser(
-        out: out,
-        verbose: -> { verbose = true },
-        lax: -> { lax = true },
-        pretty: -> { pretty = true },
-        no_jit: -> { jit = false },
-        atomic_write_bytes: ->(value) { atomic_write_bytes = value }
-      )
+      parser = OptionParser.new do |opts|
+        opts.banner = USAGE
+        opts.on("-v", "--verbose", "print parsed stage expressions") { verbose = true }
+        opts.on("--lax", "allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)") { lax = true }
+        opts.on("-p", "--pretty", "pretty-print JSON output instead of compact NDJSON") { pretty = true }
+        opts.on("--no-jit", "do not enable YJIT, even when supported by the Ruby runtime") { jit = false }
+        opts.on("--atomic-write-bytes N", Integer, "group short outputs into atomic writes of up to N bytes") do |value|
+          atomic_write_bytes = parse_atomic_write_bytes(value)
+        end
+        opts.on("-V", "--version", "show version and exit") do
+          out.puts Jrf::VERSION
+          throw :jrf_cli_exit, 0
+        end
+        opts.on("-h", "--help", "show this help and exit") do
+          out.puts HELP_TEXT
+          throw :jrf_cli_exit, 0
+        end
+      end
 
       result = catch(:jrf_cli_exit) do
         begin
@@ -73,49 +112,6 @@ module Jrf
         atomic_write_bytes: atomic_write_bytes
       ).run(expression, verbose: verbose)
       0
-    end
-
-    def self.build_option_parser(out:, verbose:, lax:, pretty:, no_jit:, atomic_write_bytes:)
-      OptionParser.new do |opts|
-        opts.banner = USAGE
-        opts.summary_indent = "  "
-        opts.summary_width = 29
-        opts.separator ""
-        opts.separator "JSON filter with the power and speed of Ruby."
-        opts.separator ""
-        opts.separator "Options:"
-        opts.on("-v", "--verbose", "print parsed stage expressions") { verbose.call }
-        opts.on("--lax", "allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)") { lax.call }
-        opts.on("-p", "--pretty", "pretty-print JSON output instead of compact NDJSON") { pretty.call }
-        opts.on("--no-jit", "do not enable YJIT, even when supported by the Ruby runtime") { no_jit.call }
-        opts.on("--atomic-write-bytes N", Integer, "group short outputs into atomic writes of up to N bytes") do |value|
-          atomic_write_bytes.call(parse_atomic_write_bytes(value))
-        end
-        opts.on("-V", "--version", "show version and exit") do
-          out.puts Jrf::VERSION
-          throw :jrf_cli_exit, 0
-        end
-        opts.on("-h", "--help", "show this help and exit") do
-          out.puts opts
-          out.puts
-          out.puts "Pipeline:"
-          out.puts "  Connect stages with top-level >>."
-          out.puts "  The current value in each stage is available as _."
-          out.puts
-          out.puts "Examples:"
-          out.puts <<~TEXT.chomp
-            jrf '_["foo"]'
-            jrf 'select(_["x"] > 10) >> _["foo"]'
-            jrf '_["items"] >> flat'
-            jrf 'sort(_["at"]) >> _["id"]'
-            jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "\#{acc} \#{v}" : v }'
-          TEXT
-          out.puts
-          out.puts "See Also:"
-          out.puts "  https://github.com/kazuho/jrf#readme"
-          throw :jrf_cli_exit, 0
-        end
-      end
     end
 
     def self.parse_atomic_write_bytes(value)
