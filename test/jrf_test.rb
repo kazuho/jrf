@@ -747,6 +747,26 @@ stdout, stderr, status = run_jrf('map_values { |v| reduce(0) { |acc, x| acc + x 
 assert_success(status, stderr, "map_values with reduce")
 assert_equal(['{"a":6,"b":60}'], lines(stdout), "map_values with reduce output")
 
+stdout, stderr, status = run_jrf('map { |k, v| "#{k}:#{v}" }', input_map_values)
+assert_success(status, stderr, "map over hash transform")
+assert_equal(['["a:1","b:10"]', '["a:2","b:20"]', '["a:3","b:30"]'], lines(stdout), "map over hash transform output")
+
+stdout, stderr, status = run_jrf('map { |pair| pair }', input_map_values)
+assert_success(status, stderr, "map over hash single block arg")
+assert_equal(['[["a",1],["b",10]]', '[["a",2],["b",20]]', '[["a",3],["b",30]]'], lines(stdout), "map over hash single block arg output")
+
+stdout, stderr, status = run_jrf('map { |k, v| select(v >= 10 && k != "a") }', input_map_values)
+assert_success(status, stderr, "map over hash transform with select")
+assert_equal(['[10]', '[20]', '[30]'], lines(stdout), "map over hash transform with select output")
+
+stdout, stderr, status = run_jrf('map { |k, v| sum(v + k.length) }', input_map_values)
+assert_success(status, stderr, "map over hash with sum")
+assert_equal(['[9,63]'], lines(stdout), "map over hash with sum output")
+
+stdout, stderr, status = run_jrf('map { |k, v| sum(_["a"] + v + k.length) }', input_map_values)
+assert_success(status, stderr, "map over hash keeps ambient _")
+assert_equal(['[15,69]'], lines(stdout), "map over hash ambient _ output")
+
 stdout, stderr, status = run_jrf('select(false) >> map { |x| sum(x) }', input_map)
 assert_success(status, stderr, "map no matches")
 assert_equal([], lines(stdout), "map no matches output")
@@ -880,6 +900,18 @@ assert_equal([[4, 6]], j.call([[1, 2], [3, 4]]), "library map reduce")
 # map_values transform
 j = Jrf.new(proc { map_values { |v| v * 10 } })
 assert_equal([{"a" => 10, "b" => 20}], j.call([{"a" => 1, "b" => 2}]), "library map_values transform")
+
+# map hash transform
+j = Jrf.new(proc { map { |k, v| "#{k}=#{v}" } })
+assert_equal([["a=1", "b=2"]], j.call([{"a" => 1, "b" => 2}]), "library map hash transform")
+
+# map hash single block arg
+j = Jrf.new(proc { map { |pair| pair } })
+assert_equal([[["a", 1], ["b", 2]]], j.call([{"a" => 1, "b" => 2}]), "library map hash single block arg")
+
+# map hash reduce
+j = Jrf.new(proc { map { |k, v| sum(v + k.length) } })
+assert_equal([[5, 7]], j.call([{"a" => 1, "b" => 2}, {"a" => 2, "b" => 3}]), "library map hash reduce")
 
 # group_by
 j = Jrf.new(proc { group_by(_["k"]) { count() } })
