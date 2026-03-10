@@ -55,7 +55,7 @@ When built-ins alone aren't enough, Ruby blocks let you extend the logic natural
 jrf 'group_by(_["status"]) { |row| average(row["latency"]) }'
 ```
 
-Ruby is also fast / memory-efficient thanks to [ZJIT](https://railsatscale.com/2025-12-24-launch-zjit/), GC with reference-counted immutable strings, and comes with a [heavily optimized JSON parser](https://byroot.github.io/ruby/json/2024/12/15/optimizing-ruby-json-part-1.html):
+Ruby is also fast / memory-efficient thanks to [ZJIT](https://railsatscale.com/2025-12-24-launch-zjit/), GC with reference-counted immutable strings, and comes with a [heavily optimized JSON parser](https://byroot.github.io/ruby/json/2024/12/15/optimizing-ruby-json-part-1.html). As a result, `jrf` outperforms `jq` — here over 3x on a simple aggregation:
 
 ```sh
 % time jq -s 'map(.tid) | min' < large.ldjson
