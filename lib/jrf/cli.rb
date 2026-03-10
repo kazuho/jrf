@@ -15,6 +15,7 @@ module Jrf
         -v, --verbose  print parsed stage expressions
         --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
         -p, --pretty   pretty-print JSON output instead of compact NDJSON
+        --no-jit       do not enable YJIT, even when supported by the Ruby runtime
         --atomic-write-bytes N
                        group short outputs into atomic writes of up to N bytes
         -h, --help     show this help and exit
@@ -38,6 +39,7 @@ module Jrf
       verbose = false
       lax = false
       pretty = false
+      jit = true
       atomic_write_bytes = Runner::DEFAULT_OUTPUT_BUFFER_LIMIT
 
       while argv.first&.start_with?("-")
@@ -50,6 +52,9 @@ module Jrf
           argv.shift
         when "-p", "--pretty"
           pretty = true
+          argv.shift
+        when "--no-jit"
+          jit = false
           argv.shift
         when /\A--atomic-write-bytes=(.+)\z/
           atomic_write_bytes = parse_atomic_write_bytes(Regexp.last_match(1), err)
@@ -75,6 +80,8 @@ module Jrf
       end
 
       expression = argv.shift
+      enable_yjit if jit
+
       inputs = Enumerator.new do |y|
         if argv.empty?
           y << input
@@ -112,6 +119,12 @@ module Jrf
 
       err.puts "--atomic-write-bytes requires a positive integer"
       nil
+    end
+
+    def self.enable_yjit
+      return unless defined?(RubyVM::YJIT) && RubyVM::YJIT.respond_to?(:enable)
+
+      RubyVM::YJIT.enable
     end
   end
 end

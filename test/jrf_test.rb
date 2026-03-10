@@ -145,6 +145,7 @@ assert_includes(stdout, "usage: jrf [options] 'STAGE >> STAGE >> ...'")
 assert_includes(stdout, "JSON filter with the power and speed of Ruby.")
 assert_includes(stdout, "--lax")
 assert_includes(stdout, "--pretty")
+assert_includes(stdout, "--no-jit")
 assert_includes(stdout, "--atomic-write-bytes N")
 assert_includes(stdout, "Pipeline:")
 assert_includes(stdout, "Connect stages with top-level >>.")
@@ -189,6 +190,18 @@ assert_equal(%w[123 456], lines(stdout), "atomic write bytes equals form output"
 stdout, stderr, status = Open3.capture3("./exe/jrf", "--atomic-write-bytes", "0", '_["hello"]', stdin_data: input_hello)
 assert_failure(status, "atomic write bytes rejects zero")
 assert_includes(stderr, "--atomic-write-bytes requires a positive integer")
+
+if defined?(RubyVM::YJIT) && RubyVM::YJIT.respond_to?(:enabled?)
+  yjit_probe = "{\"probe\":1}\n"
+
+  stdout, stderr, status = run_jrf('RubyVM::YJIT.enabled?', yjit_probe)
+  assert_success(status, stderr, "default jit enablement")
+  assert_equal(%w[true], lines(stdout), "default jit enablement output")
+
+  stdout, stderr, status = run_jrf('RubyVM::YJIT.enabled?', yjit_probe, "--no-jit")
+  assert_success(status, stderr, "no-jit option")
+  assert_equal(%w[false], lines(stdout), "no-jit option output")
+end
 
 Dir.mktmpdir do |dir|
   gz_path = File.join(dir, "input.ndjson.gz")
