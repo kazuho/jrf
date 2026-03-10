@@ -10,6 +10,24 @@ module Jrf
       RS_CHAR = "\x1e"
       DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
 
+      class RsNormalizer
+        def initialize(input)
+          @input = input
+        end
+
+        def read(length = nil, outbuf = nil)
+          chunk = @input.read(length)
+          return nil if chunk.nil?
+
+          chunk = chunk.tr(RS_CHAR, "\n")
+          if outbuf
+            outbuf.replace(chunk)
+          else
+            chunk
+          end
+        end
+      end
+
       def initialize(input: ARGF, out: $stdout, err: $stderr, lax: false, pretty: false, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
         @input = input
         @out = out
@@ -57,8 +75,6 @@ module Jrf
 
       def each_input_value_lax
         require "oj"
-        source = @input.read.to_s
-        source = source.include?(RS_CHAR) ? source.tr(RS_CHAR, "\n") : source
         handler = Class.new(Oj::ScHandler) do
           def initialize(&emit)
             @emit = emit
@@ -71,7 +87,7 @@ module Jrf
           def array_append(array, value) = array << value
           def add_value(value) = @emit.call(value)
         end.new { |value| yield value }
-        Oj.sc_parse(handler, source)
+        Oj.sc_parse(handler, RsNormalizer.new(@input))
       rescue LoadError
         raise "oj is required for --lax mode (gem install oj)"
       rescue Oj::ParseError => e
