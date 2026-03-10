@@ -31,14 +31,31 @@ jrf 'group_by(_["status"])'
 jrf 'group_by(_["item"]) { |row| sum(row["count"] * row["price"]) }'
 ```
 
-## WHY RUBY?
+## WHY JRF?
 
-No need to learn a new programming language! Just use Ruby to:
-- write whatever filtering logic inside `select(...)`
-- implement custom aggregation logic using `reduce(...) { block }`
+The author had been using `jq` for years, but its unique DSL was always a pain — you can never remember the syntax without looking it up. It is also slow on large inputs and eats up a lot of memory.
 
-In addition, `jrf` is extremely fast thanks to Ruby's JSON parser and the JIT.
-In this workload/environment, a simple test shows over 3x boost compared to `jq`:
+Then one day, a carefully-written `jq` script started swapping and ground to a halt. That was the last straw.
+
+What he wanted was:
+- SQL-like syntax for aggregation, e.g., `sum(cost * price)`
+- extensibility backed by a popular programming language
+- speed and memory efficiency
+
+Ruby turned out to be a natural fit. Any Ruby expression can be used as an argument to the built-in functions — no special DSL to learn:
+
+```sh
+jrf 'select(_["path"] =~ /^\/api/)'
+jrf 'sort(_["name"].downcase)'
+```
+
+When built-ins alone aren't enough, Ruby blocks let you extend the logic naturally:
+
+```sh
+jrf 'group_by(_["status"]) { |row| average(row["latency"]) }'
+```
+
+Ruby is also fast / memory-efficient thanks to [ZJIT](https://railsatscale.com/2025-12-24-launch-zjit/), GC with reference-counted immutable strings, and comes with a [heavily optimized JSON parser](https://byroot.github.io/ruby/json/2024/12/15/optimizing-ruby-json-part-1.html):
 
 ```sh
 % time jq -s 'map(.tid) | min' < large.ldjson
@@ -48,6 +65,8 @@ jq -s 'map(.tid) | min' < large.ldjson  4.90s user 0.46s system 99% cpu 5.395 to
 327936
 exe/jrf 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 total
 ```
+
+Give it a try — install via RubyGems: `gem install jrf`
 
 ## INPUT AND OUTPUT
 
