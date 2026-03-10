@@ -26,10 +26,12 @@ module Jrf
     def initialize(obj = nil)
       @obj = obj
       @__jrf_current_stage = nil
+      @__jrf_current_input = obj
     end
 
     def reset(obj)
       @obj = obj
+      @__jrf_current_input = obj
       self
     end
 
@@ -38,11 +40,11 @@ module Jrf
     end
 
     def flat
-      Control::Flat.new(@obj)
+      Control::Flat.new(current_input)
     end
 
     def select(predicate)
-      predicate ? @obj : Control::DROPPED
+      predicate ? current_input : Control::DROPPED
     end
 
     define_reducer(:sum) do |_ctx, value, initial: 0, block: nil|
@@ -111,15 +113,16 @@ module Jrf
     define_reducer(:sort) do |ctx, key = MISSING, block: nil|
       if block
         {
-          value: ctx._,
+          value: ctx.send(:current_input),
           initial: -> { [] },
           finish: ->(rows) { rows.sort(&block) },
           step: ->(rows, row) { rows << row }
         }
       else
-        resolved_key = key.equal?(MISSING) ? ctx._ : key
+        current = ctx.send(:current_input)
+        resolved_key = key.equal?(MISSING) ? current : key
         {
-          value: [resolved_key, ctx._],
+          value: [resolved_key, current],
           initial: -> { [] },
           finish: ->(pairs) { pairs.sort_by(&:first).map(&:last) },
           step: ->(pairs, pair) { pairs << pair }
@@ -128,7 +131,7 @@ module Jrf
     end
 
     define_reducer(:group) do |ctx, value = MISSING, block: nil|
-      resolved_value = value.equal?(MISSING) ? ctx._ : value
+      resolved_value = value.equal?(MISSING) ? ctx.send(:current_input) : value
       { value: resolved_value, initial: -> { [] }, step: ->(acc, v) { acc << v } }
     end
 
@@ -158,7 +161,7 @@ module Jrf
     def reduce(initial, &block)
       raise ArgumentError, "reduce requires a block" unless block
 
-      @__jrf_current_stage.allocate_reducer(@obj, initial: initial, &block)
+      @__jrf_current_stage.allocate_reducer(current_input, initial: initial, &block)
     end
 
     def map(&block)
@@ -179,6 +182,18 @@ module Jrf
     end
 
     private
+
+    def current_input
+      @__jrf_current_input
+    end
+
+    def __jrf_with_current_input(value)
+      saved_input = current_input
+      @__jrf_current_input = value
+      yield
+    ensure
+      @__jrf_current_input = saved_input
+    end
 
     def reducer_initial_value(initial)
       return initial.call if initial.respond_to?(:call)

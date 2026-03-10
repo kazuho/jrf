@@ -64,10 +64,7 @@ module Jrf
 
       # Transformation mode (detected on first call)
       if @map_transforms[idx]
-        case type
-        when :array then return collection.map(&block)
-        when :hash then return collection.transform_values(&block)
-        end
+        return transform_collection(type, collection, &block)
       end
 
       map_reducer = (@reducers[idx] ||= MapReducer.new(type))
@@ -78,7 +75,7 @@ module Jrf
         collection.each_with_index do |v, i|
           slot = map_reducer.slot(i)
           with_scoped_reducers(slot.reducers) do
-            result = block.call(v)
+            result = @ctx.send(:__jrf_with_current_input, v) { block.call(v) }
             slot.template ||= result
           end
         end
@@ -87,7 +84,7 @@ module Jrf
         collection.each do |k, v|
           slot = map_reducer.slot(k)
           with_scoped_reducers(slot.reducers) do
-            result = block.call(v)
+            result = @ctx.send(:__jrf_with_current_input, v) { block.call(v) }
             slot.template ||= result
           end
         end
@@ -97,12 +94,7 @@ module Jrf
       if @mode.nil? && map_reducer.slots.values.all? { |s| s.reducers.empty? }
         @map_transforms[idx] = true
         @reducers[idx] = nil
-        case type
-        when :array
-          return map_reducer.slots.sort_by { |k, _| k }.map { |_, s| s.template }
-        when :hash
-          return map_reducer.slots.transform_values(&:template)
-        end
+        return transformed_slots(type, map_reducer)
       end
 
       ReducerToken.new(idx)
@@ -115,7 +107,7 @@ module Jrf
       row = @ctx._
       slot = map_reducer.slot(key)
       with_scoped_reducers(slot.reducers) do
-        result = block.call(row)
+        result = @ctx.send(:__jrf_with_current_input, row) { block.call(row) }
         slot.template ||= result
       end
 
@@ -144,6 +136,40 @@ module Jrf
     ensure
       @reducers = saved_reducers
       @cursor = saved_cursor
+    end
+
+    def transform_collection(type, collection, &block)
+      case type
+      when :array
+        raise TypeError, "map expects Array, got #{collection.class}" unless collection.is_a?(Array)
+
+        collection.each_with_object([]) do |value, result|
+          mapped = @ctx.send(:__jrf_with_current_input, value) { block.call(value) }
+          result << mapped unless mapped.equal?(Control::DROPPED)
+        end
+      when :hash
+        raise TypeError, "map_values expects Hash, got #{collection.class}" unless collection.is_a?(Hash)
+
+        collection.each_with_object({}) do |(key, value), result|
+          mapped = @ctx.send(:__jrf_with_current_input, value) { block.call(value) }
+          result[key] = mapped unless mapped.equal?(Control::DROPPED)
+        end
+      end
+    end
+
+    def transformed_slots(type, map_reducer)
+      case type
+      when :array
+        map_reducer.slots
+          .sort_by { |k, _| k }
+          .each_with_object([]) do |(_, slot), result|
+            result << slot.template unless slot.template.equal?(Control::DROPPED)
+          end
+      when :hash
+        map_reducer.slots.each_with_object({}) do |(key, slot), result|
+          result[key] = slot.template unless slot.template.equal?(Control::DROPPED)
+        end
+      end
     end
 
     class MapReducer

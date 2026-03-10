@@ -540,6 +540,10 @@ stdout, stderr, status = run_jrf('_["values"] >> map { |x| sum(_[0] + x) }', inp
 assert_success(status, stderr, "map keeps ambient _")
 assert_equal(['[12,66,606]'], lines(stdout), "map ambient _ output")
 
+stdout, stderr, status = run_jrf('_["values"] >> map { |x| reduce(0) { |acc, v| acc + v } }', input_map)
+assert_success(status, stderr, "map with reduce")
+assert_equal(['[6,60,600]'], lines(stdout), "map with reduce output")
+
 input_map_varying = <<~NDJSON
   [1,10]
   [2,20,200]
@@ -549,6 +553,20 @@ NDJSON
 stdout, stderr, status = run_jrf('map { |x| sum(x) }', input_map_varying)
 assert_success(status, stderr, "map varying lengths")
 assert_equal(['[6,30,200]'], lines(stdout), "map varying lengths output")
+
+input_map_unsorted = <<~NDJSON
+  {"values":[3,30]}
+  {"values":[1,10]}
+  {"values":[2,20]}
+NDJSON
+
+stdout, stderr, status = run_jrf('_["values"] >> map { |x| group }', input_map)
+assert_success(status, stderr, "map with group")
+assert_equal(['[[1,2,3],[10,20,30],[100,200,300]]'], lines(stdout), "map with group output")
+
+stdout, stderr, status = run_jrf('_["values"] >> map { |x| sort }', input_map_unsorted)
+assert_success(status, stderr, "map with sort default key")
+assert_equal(['[[1,2,3],[10,20,30]]'], lines(stdout), "map with sort default key output")
 
 input_map_values = <<~NDJSON
   {"a":1,"b":10}
@@ -578,9 +596,17 @@ stdout, stderr, status = run_jrf('map_values { |v| count(v) }', input_map_values
 assert_success(status, stderr, "map_values with count")
 assert_equal(['{"a":3,"b":3}'], lines(stdout), "map_values with count output")
 
+stdout, stderr, status = run_jrf('map_values { |v| group }', input_map_values)
+assert_success(status, stderr, "map_values with group")
+assert_equal(['{"a":[1,2,3],"b":[10,20,30]}'], lines(stdout), "map_values with group output")
+
 stdout, stderr, status = run_jrf('map_values { |v| sum(_["a"] + v) }', input_map_values)
 assert_success(status, stderr, "map_values keeps ambient _")
 assert_equal(['{"a":12,"b":66}'], lines(stdout), "map_values ambient _ output")
+
+stdout, stderr, status = run_jrf('map_values { |v| reduce(0) { |acc, x| acc + x } }', input_map_values)
+assert_success(status, stderr, "map_values with reduce")
+assert_equal(['{"a":6,"b":60}'], lines(stdout), "map_values with reduce output")
 
 stdout, stderr, status = run_jrf('select(false) >> map { |x| sum(x) }', input_map)
 assert_success(status, stderr, "map no matches")
@@ -599,9 +625,17 @@ stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 }', input_map)
 assert_success(status, stderr, "map transform")
 assert_equal(['[2,11,101]', '[3,21,201]', '[4,31,301]'], lines(stdout), "map transform output")
 
+stdout, stderr, status = run_jrf('_["values"] >> map { |x| select(x >= 20) }', input_map)
+assert_success(status, stderr, "map transform with select")
+assert_equal(['[100]', '[20,200]', '[30,300]'], lines(stdout), "map transform with select output")
+
 stdout, stderr, status = run_jrf('map_values { |v| v * 2 }', input_map_values)
 assert_success(status, stderr, "map_values transform")
 assert_equal(['{"a":2,"b":20}', '{"a":4,"b":40}', '{"a":6,"b":60}'], lines(stdout), "map_values transform output")
+
+stdout, stderr, status = run_jrf('map_values { |v| select(v >= 10) }', input_map_values)
+assert_success(status, stderr, "map_values transform with select")
+assert_equal(['{"b":10}', '{"b":20}', '{"b":30}'], lines(stdout), "map_values transform with select output")
 
 stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 } >> map { |x| x * 10 }', input_map)
 assert_success(status, stderr, "chained map transforms")
@@ -639,6 +673,12 @@ stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| group(row["path"
 assert_success(status, stderr, "group_by with group(expr)")
 assert_equal(['{"200":["/a","/c","/d"],"404":["/b"]}'], lines(stdout), "group_by with group(expr) output")
 
+stdout, stderr, status = run_jrf('group_by(_["status"]) { group }', input_gb)
+assert_success(status, stderr, "group_by with implicit group")
+result = JSON.parse(lines(stdout).first)
+assert_equal(3, result["200"].length, "group_by implicit group 200 count")
+assert_equal("/a", result["200"][0]["path"], "group_by implicit group first row")
+
 stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| min(row["latency"]) }', input_gb)
 assert_success(status, stderr, "group_by with min")
 assert_equal(['{"200":10,"404":50}'], lines(stdout), "group_by with min output")
@@ -646,6 +686,10 @@ assert_equal(['{"200":10,"404":50}'], lines(stdout), "group_by with min output")
 stdout, stderr, status = run_jrf('group_by(_["status"]) { |row| {total: sum(row["latency"]), n: count()} }', input_gb)
 assert_success(status, stderr, "group_by with multi-reducer")
 assert_equal(['{"200":{"total":60,"n":3},"404":{"total":50,"n":1}}'], lines(stdout), "group_by multi-reducer output")
+
+stdout, stderr, status = run_jrf('group_by(_["status"]) { reduce(0) { |acc, row| acc + row["latency"] } }', input_gb)
+assert_success(status, stderr, "group_by with reduce")
+assert_equal(['{"200":60,"404":50}'], lines(stdout), "group_by with reduce output")
 
 stdout, stderr, status = run_jrf('select(false) >> group_by(_["status"]) { count() }', input_gb)
 assert_success(status, stderr, "group_by no matches")

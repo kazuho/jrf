@@ -61,6 +61,7 @@ exe/jrf 'min(_["tid"])' < large.ldjson  1.37s user 0.15s system 99% cpu 1.531 to
 `jrf` processes the input using a multi-stage pipeline that is connected by top-level `>>`.
 
 Within each stage, the current JSON value is available as `_`, and the following built-in functions are provided.
+Inside nested block contexts such as `map`, `map_values`, and `group_by`, `_` remains the surrounding row value, while implicit-input built-ins operate on the current target object for that block.
 For aggregation functions, `nil` values are ignored.
 
 ### select(predicate)
@@ -83,7 +84,7 @@ jrf '_["items"] >> flat'
 ### group(expr)
 
 Collects values into one Array. This is the opposite of `flat`.
-`group` (without arguments) is shorthand for `group(_)`, i.e., collect the current stage value as-is.
+`group` (without arguments) collects the current target object as-is.
 `group(expr)` first evaluates `expr` and collects that result instead.
 
 ```sh
@@ -167,14 +168,17 @@ jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 jrf '_["count"] >> reduce(0) { |acc, v| acc + v }'
 ```
 
+### sort()
 ### sort(key_expr)
 ### sort(key_expr) { |a, b| ... }
 
 Sorts rows.
+With no argument, rows are sorted by the current target object.
 With one argument, rows are sorted by key expression.
 With a block, rows are sorted by custom comparator.
 
 ```sh
+jrf 'sort >> _["id"]'
 jrf 'sort(_["at"]) >> _["id"]'
 jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
 ```
@@ -183,6 +187,7 @@ jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
 
 Maps each element of an Array.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the element.
+Implicit-input built-ins such as `select`, `group`, `sort`, and `reduce` operate on the current element.
 
 If the block is a plain expression, `map` behaves like a regular per-row transform.
 If the block calls reducers, each array position gets its own independent reducer instance across rows.
@@ -200,6 +205,7 @@ jrf '_["values"] >> map { |x| min(x) }'
 
 Maps each value of a Hash.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the value.
+Implicit-input built-ins such as `select`, `group`, `sort`, and `reduce` operate on the current value.
 
 If the block is a plain expression, `map_values` behaves like a regular per-row transform.
 If the block calls reducers, each key gets its own independent reducer instance across rows.
@@ -220,6 +226,7 @@ Without a block, collects rows into arrays (equivalent to `group_by(key) { group
 
 With a block, applies the given reducer independently per group.
 Inside the block, `_` still refers to the surrounding row, and the current row is also yielded as the block parameter.
+Implicit-input built-ins operate on that current row.
 
 ```sh
 jrf 'group_by(_["status"])'
