@@ -68,7 +68,17 @@ class RecordingRunner < Jrf::CLI::Runner
   end
 end
 
-class ChunkedInput
+class SourceList
+  def initialize(*sources)
+    @sources = sources
+  end
+
+  def each_source(&block)
+    @sources.each(&block)
+  end
+end
+
+class ChunkedSource
   def initialize(str, chunk_size: 5)
     @str = str
     @chunk_size = chunk_size
@@ -154,18 +164,18 @@ assert_includes(stdout, "https://github.com/kazuho/jrf#readme")
 assert_equal([], lines(stderr), "help stderr output")
 
 threshold_input = StringIO.new((1..4).map { |i| "{\"foo\":\"#{'x' * 1020}\",\"i\":#{i}}\n" }.join)
-buffered_runner = RecordingRunner.new(input: threshold_input, out: StringIO.new, err: StringIO.new)
+buffered_runner = RecordingRunner.new(input: SourceList.new(threshold_input), out: StringIO.new, err: StringIO.new)
 buffered_runner.run('_')
 expected_line = JSON.generate({"foo" => "x" * 1020, "i" => 1}) + "\n"
 assert_equal(2, buffered_runner.writes.length, "default atomic write limit buffers records until the configured threshold")
 assert_equal(expected_line.bytesize * 3, buffered_runner.writes.first.bytesize, "default atomic write limit flushes before the next record would exceed the threshold")
 assert_equal(expected_line.bytesize, buffered_runner.writes.last.bytesize, "final buffer flush emits the remaining record")
 
-small_limit_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":2}\n"), out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
+small_limit_runner = RecordingRunner.new(input: SourceList.new(StringIO.new("{\"foo\":1}\n{\"foo\":2}\n")), out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
 small_limit_runner.run('_["foo"]')
 assert_equal(["1\n", "2\n"], small_limit_runner.writes, "small atomic write limit emits oversized records directly")
 
-error_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: StringIO.new)
+error_runner = RecordingRunner.new(input: SourceList.new(StringIO.new("{\"foo\":1}\n{\"foo\":" )), out: StringIO.new, err: StringIO.new)
 begin
   error_runner.run('_["foo"]')
   raise "expected parse error for buffered flush test"
@@ -605,13 +615,24 @@ assert_success(status, stderr, "lax ignores trailing separator")
 assert_equal(%w[9], lines(stdout), "lax trailing separator output")
 
 chunked_lax_out = RecordingRunner.new(
-  input: ChunkedInput.new("{\"foo\":1}\n\x1e{\"foo\":2}\n\t{\"foo\":3}\n"),
+  input: SourceList.new(ChunkedSource.new("{\"foo\":1}\n\x1e{\"foo\":2}\n\t{\"foo\":3}\n")),
   out: StringIO.new,
   err: StringIO.new,
   lax: true
 )
 chunked_lax_out.run('_["foo"]')
 assert_equal(%w[1 2 3], lines(chunked_lax_out.writes.join), "lax mode streams chunked input without whole-input reads")
+
+Dir.mktmpdir do |dir|
+  one = File.join(dir, "one.json")
+  two = File.join(dir, "two.json")
+  File.write(one, "1")
+  File.write(two, "2")
+
+  stdout, stderr, status = Open3.capture3("./exe/jrf", "--lax", "_", one, two)
+  assert_success(status, stderr, "lax keeps file boundaries")
+  assert_equal(%w[1 2], lines(stdout), "lax does not merge JSON across file boundaries")
+end
 
 stdout, stderr, status = run_jrf('select(_["x"] > ) >> _["foo"]', "")
 assert_failure(status, "syntax error should fail before row loop")

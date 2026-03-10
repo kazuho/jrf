@@ -65,11 +65,13 @@ module Jrf
       end
 
       def each_input_value_ndjson
-        @input.each_line do |raw_line|
-          line = raw_line.strip
-          next if line.empty?
+        @input.each_source do |source|
+          source.each_line do |raw_line|
+            line = raw_line.strip
+            next if line.empty?
 
-          yield JSON.parse(line)
+            yield JSON.parse(line)
+          end
         end
       end
 
@@ -86,8 +88,10 @@ module Jrf
           def array_start = []
           def array_append(array, value) = array << value
           def add_value(value) = @emit.call(value)
-        end.new { |value| yield value }
-        Oj.sc_parse(handler, RsNormalizer.new(@input))
+        end
+        @input.each_source do |source|
+          Oj.sc_parse(handler.new { |value| yield value }, RsNormalizer.new(source))
+        end
       rescue LoadError
         raise "oj is required for --lax mode (gem install oj)"
       rescue Oj::ParseError => e
