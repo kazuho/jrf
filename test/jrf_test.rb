@@ -749,19 +749,19 @@ assert_equal(['{"a":6,"b":60}'], lines(stdout), "map_values with reduce output")
 
 stdout, stderr, status = run_jrf('map { |k, v| "#{k}:#{v}" }', input_map_values)
 assert_success(status, stderr, "map over hash transform")
-assert_equal(['{"a":"a:1","b":"b:10"}', '{"a":"a:2","b":"b:20"}', '{"a":"a:3","b":"b:30"}'], lines(stdout), "map over hash transform output")
+assert_equal(['["a:1","b:10"]', '["a:2","b:20"]', '["a:3","b:30"]'], lines(stdout), "map over hash transform output")
 
 stdout, stderr, status = run_jrf('map { |k, v| select(v >= 10 && k != "a") }', input_map_values)
 assert_success(status, stderr, "map over hash transform with select")
-assert_equal(['{"b":10}', '{"b":20}', '{"b":30}'], lines(stdout), "map over hash transform with select output")
+assert_equal(['[10]', '[20]', '[30]'], lines(stdout), "map over hash transform with select output")
 
 stdout, stderr, status = run_jrf('map { |k, v| sum(v + k.length) }', input_map_values)
 assert_success(status, stderr, "map over hash with sum")
-assert_equal(['{"a":9,"b":63}'], lines(stdout), "map over hash with sum output")
+assert_equal(['[9,63]'], lines(stdout), "map over hash with sum output")
 
 stdout, stderr, status = run_jrf('map { |k, v| sum(_["a"] + v + k.length) }', input_map_values)
 assert_success(status, stderr, "map over hash keeps ambient _")
-assert_equal(['{"a":15,"b":69}'], lines(stdout), "map over hash ambient _ output")
+assert_equal(['[15,69]'], lines(stdout), "map over hash ambient _ output")
 
 stdout, stderr, status = run_jrf('select(false) >> map { |x| sum(x) }', input_map)
 assert_success(status, stderr, "map no matches")
@@ -899,11 +899,11 @@ assert_equal([{"a" => 10, "b" => 20}], j.call([{"a" => 1, "b" => 2}]), "library 
 
 # map hash transform
 j = Jrf.new(proc { map { |k, v| "#{k}=#{v}" } })
-assert_equal([{"a" => "a=1", "b" => "b=2"}], j.call([{"a" => 1, "b" => 2}]), "library map hash transform")
+assert_equal([["a=1", "b=2"]], j.call([{"a" => 1, "b" => 2}]), "library map hash transform")
 
 # map hash reduce
 j = Jrf.new(proc { map { |k, v| sum(v + k.length) } })
-assert_equal([{"a" => 5, "b" => 7}], j.call([{"a" => 1, "b" => 2}, {"a" => 2, "b" => 3}]), "library map hash reduce")
+assert_equal([[5, 7]], j.call([{"a" => 1, "b" => 2}, {"a" => 2, "b" => 3}]), "library map hash reduce")
 
 # group_by
 j = Jrf.new(proc { group_by(_["k"]) { count() } })

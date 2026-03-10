@@ -68,7 +68,7 @@ module Jrf
         return transform_collection(type, collection, hash_args: hash_args, method_name: method_name, &block)
       end
 
-      map_reducer = (@reducers[idx] ||= MapReducer.new(type))
+      map_reducer = (@reducers[idx] ||= MapReducer.new(type, map_result_type(type, method_name)))
 
       case type
       when :array
@@ -101,7 +101,7 @@ module Jrf
 
     def allocate_group_by(key, &block)
       idx = @cursor
-      map_reducer = (@reducers[idx] ||= MapReducer.new(:hash))
+      map_reducer = (@reducers[idx] ||= MapReducer.new(:hash, :hash))
 
       row = @ctx._
       slot = map_reducer.slot(key)
@@ -145,12 +145,19 @@ module Jrf
           append_map_result(result, mapped)
         end
       when :hash
-        collection.each_with_object({}) do |(key, value), result|
-          mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, hash_args) }
-          next if mapped.equal?(Control::DROPPED)
-          raise TypeError, "flat is not supported inside #{method_name}" if mapped.is_a?(Control::Flat)
+        if method_name == "map"
+          collection.each_with_object([]) do |(key, value), result|
+            mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, hash_args) }
+            append_hash_map_result(result, mapped, method_name)
+          end
+        else
+          collection.each_with_object({}) do |(key, value), result|
+            mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, hash_args) }
+            next if mapped.equal?(Control::DROPPED)
+            raise TypeError, "flat is not supported inside #{method_name}" if mapped.is_a?(Control::Flat)
 
-          result[key] = mapped
+            result[key] = mapped
+          end
         end
       end
     end
@@ -164,11 +171,17 @@ module Jrf
             append_map_result(result, slot.template)
           end
       when :hash
-        map_reducer.slots.each_with_object({}) do |(key, slot), result|
-          next if slot.template.equal?(Control::DROPPED)
-          raise TypeError, "flat is not supported inside #{method_name}" if slot.template.is_a?(Control::Flat)
+        if method_name == "map"
+          map_reducer.slots.each_with_object([]) do |(_key, slot), result|
+            append_hash_map_result(result, slot.template, method_name)
+          end
+        else
+          map_reducer.slots.each_with_object({}) do |(key, slot), result|
+            next if slot.template.equal?(Control::DROPPED)
+            raise TypeError, "flat is not supported inside #{method_name}" if slot.template.is_a?(Control::Flat)
 
-          result[key] = slot.template
+            result[key] = slot.template
+          end
         end
       end
     end
@@ -192,6 +205,12 @@ module Jrf
       end
     end
 
+    def map_result_type(type, method_name)
+      return :array if type == :array
+
+      method_name == "map" ? :array : :hash
+    end
+
     def append_map_result(result, mapped)
       return if mapped.equal?(Control::DROPPED)
 
@@ -206,11 +225,19 @@ module Jrf
       end
     end
 
+    def append_hash_map_result(result, mapped, method_name)
+      return if mapped.equal?(Control::DROPPED)
+      raise TypeError, "flat is not supported inside #{method_name}" if mapped.is_a?(Control::Flat)
+
+      result << mapped
+    end
+
     class MapReducer
       attr_reader :slots
 
-      def initialize(type)
+      def initialize(type, result_type)
         @type = type
+        @result_type = result_type
         @slots = {}
       end
 
@@ -224,9 +251,16 @@ module Jrf
           keys = @slots.keys.sort
           [keys.map { |k| Stage.resolve_template(@slots[k].template, @slots[k].reducers) }]
         when :hash
-          result = {}
-          @slots.each { |k, s| result[k] = Stage.resolve_template(s.template, s.reducers) }
-          [result]
+          case @result_type
+          when :array
+            [@slots.map { |_k, s| Stage.resolve_template(s.template, s.reducers) }]
+          when :hash
+            result = {}
+            @slots.each { |k, s| result[k] = Stage.resolve_template(s.template, s.reducers) }
+            [result]
+          else
+            raise ArgumentError, "unsupported map result type: #{@result_type.inspect}"
+          end
         end
       end
 
