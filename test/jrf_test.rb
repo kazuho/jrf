@@ -60,6 +60,28 @@ class RecordingRunner < Jrf::CLI::Runner
   end
 end
 
+class ChunkedInput
+  def initialize(str, chunk_size: 5)
+    @str = str
+    @chunk_size = chunk_size
+    @offset = 0
+  end
+
+  def read(length = nil, outbuf = nil)
+    raise "expected chunked reads" if length.nil?
+
+    chunk = @str.byteslice(@offset, [length, @chunk_size].min)
+    return nil unless chunk
+
+    @offset += chunk.bytesize
+    if outbuf
+      outbuf.replace(chunk)
+    else
+      chunk
+    end
+  end
+end
+
 File.chmod(0o755, "./exe/jrf")
 
 input = <<~NDJSON
@@ -544,6 +566,15 @@ input_lax_trailing_rs = "\x1e{\"foo\":9}\n\x1e"
 stdout, stderr, status = run_jrf('_["foo"]', input_lax_trailing_rs, "--lax")
 assert_success(status, stderr, "lax ignores trailing separator")
 assert_equal(%w[9], lines(stdout), "lax trailing separator output")
+
+chunked_lax_out = RecordingRunner.new(
+  input: ChunkedInput.new("{\"foo\":1}\n\x1e{\"foo\":2}\n\t{\"foo\":3}\n"),
+  out: StringIO.new,
+  err: StringIO.new,
+  lax: true
+)
+chunked_lax_out.run('_["foo"]')
+assert_equal(%w[1 2 3], lines(chunked_lax_out.writes.join), "lax mode streams chunked input without whole-input reads")
 
 stdout, stderr, status = run_jrf('select(_["x"] > ) >> _["foo"]', "")
 assert_failure(status, "syntax error should fail before row loop")
