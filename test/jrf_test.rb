@@ -118,7 +118,6 @@ assert_includes(stdout, "JSON filter with the power and speed of Ruby.")
 assert_includes(stdout, "--lax")
 assert_includes(stdout, "--pretty")
 assert_includes(stdout, "--atomic-write-bytes N")
-assert_includes(stdout, "--auto-decompress")
 assert_includes(stdout, "Pipeline:")
 assert_includes(stdout, "Connect stages with top-level >>.")
 assert_includes(stdout, "The current value in each stage is available as _.")
@@ -170,11 +169,7 @@ Dir.mktmpdir do |dir|
   end
 
   stdout, stderr, status = Open3.capture3("./exe/jrf", '_["foo"]', gz_path)
-  assert_failure(status, "compressed input without auto-decompress")
-  assert_includes(stderr, "JSON::ParserError")
-
-  stdout, stderr, status = Open3.capture3("./exe/jrf", "--auto-decompress", '_["foo"]', gz_path)
-  assert_success(status, stderr, "compressed input with auto-decompress")
+  assert_success(status, stderr, "compressed input by suffix")
   assert_equal(%w[10 20], lines(stdout), "compressed input output")
 end
 

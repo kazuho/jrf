@@ -5,10 +5,9 @@ require "zlib"
 module Jrf
   class CLI
     class Input
-      def initialize(paths, stdin:, auto_decompress: false)
+      def initialize(paths, stdin:)
         @paths = paths
         @stdin = stdin
-        @auto_decompress = auto_decompress
       end
 
       def each_line(&block)
@@ -36,7 +35,7 @@ module Jrf
         @paths.each do |path|
           if path == "-"
             yield @stdin
-          elsif @auto_decompress && path.end_with?(".gz")
+          elsif path.end_with?(".gz")
             Zlib::GzipReader.open(path) do |io|
               yield io
             end
