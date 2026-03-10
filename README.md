@@ -6,6 +6,7 @@
 jrf 'STAGE >> STAGE >> STAGE ...' < input.ndjson
 jrf --help
 jrf --pretty '_'
+jrf --atomic-write-bytes 512 '_'
 
 # Extract
 jrf '_["foo"]'
@@ -75,6 +76,7 @@ Give it a try — install via RubyGems: `gem install jrf`
 - Output is NDJSON (one compact JSON value per line).
 - `--pretty` pretty-prints each output JSON value.
 - Short outputs are grouped into atomic writes, allowing safe use with parallel pipelines such as `xargs -P`.
+- `--atomic-write-bytes N` sets the maximum size of those grouped writes when you need to match your system's pipe atomic-write limit.
 
 ## BUILT-IN FUNCTIONS
 

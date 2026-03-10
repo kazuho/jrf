@@ -8,14 +8,15 @@ module Jrf
   class CLI
     class Runner
       RS_CHAR = "\x1e"
-      OUTPUT_BUFFER_LIMIT = 4096
+      DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
 
-      def initialize(input: ARGF, out: $stdout, err: $stderr, lax: false, pretty: false)
+      def initialize(input: ARGF, out: $stdout, err: $stderr, lax: false, pretty: false, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
         @input = input
         @out = out
         @err = err
         @lax = lax
         @pretty = pretty
+        @atomic_write_bytes = atomic_write_bytes
         @output_buffer = +""
       end
 
@@ -85,7 +86,7 @@ module Jrf
 
       def emit_output(value)
         record = (@pretty ? JSON.pretty_generate(value) : JSON.generate(value)) << "\n"
-        if @output_buffer.bytesize + record.bytesize <= OUTPUT_BUFFER_LIMIT
+        if @output_buffer.bytesize + record.bytesize <= @atomic_write_bytes
           @output_buffer << record
         else
           write_output(@output_buffer)

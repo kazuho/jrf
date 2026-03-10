@@ -54,6 +54,8 @@ class RecordingRunner < Jrf::CLI::Runner
   private
 
   def write_output(str)
+    return if str.empty?
+
     @writes << str
   end
 end
@@ -109,10 +111,11 @@ assert_includes(stderr, 'stage[1]: _["hello"]')
 
 stdout, stderr, status = Open3.capture3("./exe/jrf", "--help")
 assert_success(status, stderr, "help option")
-assert_includes(stdout, "usage: jrf [-v] [--lax] [--pretty] [--help] 'STAGE >> STAGE >> ...'")
+assert_includes(stdout, "usage: jrf [-v] [--lax] [--pretty] [--atomic-write-bytes N] [--help] 'STAGE >> STAGE >> ...'")
 assert_includes(stdout, "JSON filter with the power and speed of Ruby.")
 assert_includes(stdout, "--lax")
 assert_includes(stdout, "--pretty")
+assert_includes(stdout, "--atomic-write-bytes N")
 assert_includes(stdout, "Pipeline:")
 assert_includes(stdout, "Connect stages with top-level >>.")
 assert_includes(stdout, "The current value in each stage is available as _.")
@@ -124,9 +127,13 @@ threshold_input = StringIO.new((1..4).map { |i| "{\"foo\":\"#{'x' * 1020}\",\"i\
 buffered_runner = RecordingRunner.new(input: threshold_input, out: StringIO.new, err: StringIO.new)
 buffered_runner.run('_')
 expected_line = JSON.generate({"foo" => "x" * 1020, "i" => 1}) + "\n"
-assert_equal(2, buffered_runner.writes.length, "buffer flushes around 4KB threshold")
-assert_equal(expected_line.bytesize * 3, buffered_runner.writes[0].bytesize, "buffer keeps records until next append would exceed threshold")
-assert_equal(expected_line.bytesize, buffered_runner.writes[1].bytesize, "final buffer flush emits remaining records")
+assert_equal(2, buffered_runner.writes.length, "default atomic write limit buffers records until the configured threshold")
+assert_equal(expected_line.bytesize * 3, buffered_runner.writes.first.bytesize, "default atomic write limit flushes before the next record would exceed the threshold")
+assert_equal(expected_line.bytesize, buffered_runner.writes.last.bytesize, "final buffer flush emits the remaining record")
+
+small_limit_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":2}\n"), out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
+small_limit_runner.run('_["foo"]')
+assert_equal(["1\n", "2\n"], small_limit_runner.writes, "small atomic write limit emits oversized records directly")
 
 error_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: StringIO.new)
 begin
@@ -140,6 +147,18 @@ stdout, stderr, status = run_jrf('select(_["hello"] == 123) >> _["hello"]', inpu
 assert_success(status, stderr, "dump stages verbose alias")
 assert_equal(%w[123], lines(stdout), "dump stages verbose alias output")
 assert_includes(stderr, 'stage[0]: select(_["hello"] == 123)')
+
+stdout, stderr, status = run_jrf('_["hello"]', input_hello, "--atomic-write-bytes", "512")
+assert_success(status, stderr, "atomic write bytes option")
+assert_equal(%w[123 456], lines(stdout), "atomic write bytes option output")
+
+stdout, stderr, status = run_jrf('_["hello"]', input_hello, "--atomic-write-bytes=512")
+assert_success(status, stderr, "atomic write bytes equals form")
+assert_equal(%w[123 456], lines(stdout), "atomic write bytes equals form output")
+
+stdout, stderr, status = Open3.capture3("./exe/jrf", "--atomic-write-bytes", "0", '_["hello"]', stdin_data: input_hello)
+assert_failure(status, "atomic write bytes rejects zero")
+assert_includes(stderr, "--atomic-write-bytes requires a positive integer")
 
 stdout, stderr, status = run_jrf('_', input_hello, "--pretty")
 assert_success(status, stderr, "pretty output")

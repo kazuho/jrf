@@ -4,10 +4,10 @@ require_relative "cli/runner"
 
 module Jrf
   class CLI
-    USAGE = "usage: jrf [-v] [--lax] [--pretty] [--help] 'STAGE >> STAGE >> ...'"
+    USAGE = "usage: jrf [-v] [--lax] [--pretty] [--atomic-write-bytes N] [--help] 'STAGE >> STAGE >> ...'"
 
     HELP_TEXT = <<~'TEXT'
-      usage: jrf [-v] [--lax] [--pretty] [--help] 'STAGE >> STAGE >> ...'
+      usage: jrf [-v] [--lax] [--pretty] [--atomic-write-bytes N] [--help] 'STAGE >> STAGE >> ...'
 
       JSON filter with the power and speed of Ruby.
 
@@ -15,6 +15,8 @@ module Jrf
         -v, --verbose  print parsed stage expressions
         --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
         -p, --pretty   pretty-print JSON output instead of compact NDJSON
+        --atomic-write-bytes N
+                       group short outputs into atomic writes of up to N bytes
         -h, --help     show this help and exit
 
       Pipeline:
@@ -36,6 +38,7 @@ module Jrf
       verbose = false
       lax = false
       pretty = false
+      atomic_write_bytes = Runner::DEFAULT_OUTPUT_BUFFER_LIMIT
 
       while argv.first&.start_with?("-")
         case argv.first
@@ -48,6 +51,14 @@ module Jrf
         when "-p", "--pretty"
           pretty = true
           argv.shift
+        when /\A--atomic-write-bytes=(.+)\z/
+          atomic_write_bytes = parse_atomic_write_bytes(Regexp.last_match(1), err)
+          return 1 unless atomic_write_bytes
+          argv.shift
+        when "--atomic-write-bytes"
+          argv.shift
+          atomic_write_bytes = parse_atomic_write_bytes(argv.shift, err)
+          return 1 unless atomic_write_bytes
         when "-h", "--help"
           out.puts HELP_TEXT
           return 0
@@ -64,8 +75,23 @@ module Jrf
       end
 
       expression = argv.shift
-      Runner.new(input: input, out: out, err: err, lax: lax, pretty: pretty).run(expression, verbose: verbose)
+      Runner.new(
+        input: input,
+        out: out,
+        err: err,
+        lax: lax,
+        pretty: pretty,
+        atomic_write_bytes: atomic_write_bytes
+      ).run(expression, verbose: verbose)
       0
+    end
+
+    def self.parse_atomic_write_bytes(value, err)
+      bytes = Integer(value, exception: false)
+      return bytes if bytes && bytes.positive?
+
+      err.puts "--atomic-write-bytes requires a positive integer"
+      nil
     end
   end
 end
