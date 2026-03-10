@@ -58,19 +58,19 @@ module Jrf
       ReducerToken.new(idx)
     end
 
-    def allocate_map(mode, collection, &block)
+    def allocate_map(collection, output_type:, &block)
       idx = @cursor
       @cursor += 1
-      type = map_collection_type(collection, mode)
+      input_type = detect_input_type(collection, output_type)
 
       # Transformation mode (detected on first call)
       if @map_transforms[idx]
-        return transform_collection(type, collection, mode, &block)
+        return transform_collection(input_type, collection, output_type, &block)
       end
 
-      map_reducer = (@reducers[idx] ||= MapReducer.new(type, mode))
+      map_reducer = (@reducers[idx] ||= MapReducer.new(input_type, output_type))
 
-      case type
+      case input_type
       when :array
         collection.each_with_index do |v, i|
           slot = map_reducer.slot(i)
@@ -83,7 +83,7 @@ module Jrf
         collection.each do |k, v|
           slot = map_reducer.slot(k)
           with_scoped_reducers(slot.reducers) do
-            result = @ctx.send(:__jrf_with_current_input, v) { invoke_hash_map_block(block, k, v, mode) }
+            result = @ctx.send(:__jrf_with_current_input, v) { invoke_hash_map_block(block, k, v, output_type) }
             slot.template ||= result
           end
         end
@@ -93,7 +93,7 @@ module Jrf
       if @mode.nil? && map_reducer.slots.values.all? { |s| s.reducers.empty? }
         @map_transforms[idx] = true
         @reducers[idx] = nil
-        return transformed_slots(type, map_reducer, mode)
+        return transformed_slots(input_type, map_reducer, output_type)
       end
 
       ReducerToken.new(idx)
@@ -137,22 +137,22 @@ module Jrf
       @cursor = saved_cursor
     end
 
-    def transform_collection(type, collection, mode, &block)
-      case type
+    def transform_collection(input_type, collection, output_type, &block)
+      case input_type
       when :array
         collection.each_with_object([]) do |value, result|
           mapped = @ctx.send(:__jrf_with_current_input, value) { block.call(value) }
-          append_map_result(result, mapped, mode)
+          append_map_result(result, mapped, output_type)
         end
       when :hash
-        if mode == :array
+        if output_type == :array
           collection.each_with_object([]) do |(key, value), result|
-            mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, mode) }
-            append_map_result(result, mapped, mode)
+            mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, output_type) }
+            append_map_result(result, mapped, output_type)
           end
         else
           collection.each_with_object({}) do |(key, value), result|
-            mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, mode) }
+            mapped = @ctx.send(:__jrf_with_current_input, value) { invoke_hash_map_block(block, key, value, output_type) }
             next if mapped.equal?(Control::DROPPED)
             raise TypeError, "flat is not supported inside map_values" if mapped.is_a?(Control::Flat)
 
@@ -162,18 +162,18 @@ module Jrf
       end
     end
 
-    def transformed_slots(type, map_reducer, mode)
-      case type
+    def transformed_slots(input_type, map_reducer, output_type)
+      case input_type
       when :array
         map_reducer.slots
           .sort_by { |k, _| k }
           .each_with_object([]) do |(_, slot), result|
-            append_map_result(result, slot.template, mode)
+            append_map_result(result, slot.template, output_type)
           end
       when :hash
-        if mode == :array
+        if output_type == :array
           map_reducer.slots.each_with_object([]) do |(_key, slot), result|
-            append_map_result(result, slot.template, mode)
+            append_map_result(result, slot.template, output_type)
           end
         else
           map_reducer.slots.each_with_object({}) do |(key, slot), result|
@@ -186,27 +186,28 @@ module Jrf
       end
     end
 
-    def map_collection_type(collection, mode)
+    def detect_input_type(collection, output_type)
       return :array if collection.is_a?(Array)
       return :hash if collection.is_a?(Hash)
 
-      expected = mode == :hash ? "Hash" : "Array or Hash"
-      raise TypeError, "#{mode == :hash ? "map_values" : "map"} expects #{expected}, got #{collection.class}"
+      expected = output_type == :hash ? "Hash" : "Array or Hash"
+      method_name = output_type == :hash ? "map_values" : "map"
+      raise TypeError, "#{method_name} expects #{expected}, got #{collection.class}"
     end
 
-    def invoke_hash_map_block(block, key, value, mode)
-      if mode == :array
+    def invoke_hash_map_block(block, key, value, output_type)
+      if output_type == :array
         block.call([key, value])
       else
         block.call(value)
       end
     end
 
-    def append_map_result(result, mapped, mode)
+    def append_map_result(result, mapped, output_type)
       return if mapped.equal?(Control::DROPPED)
 
       if mapped.is_a?(Control::Flat)
-        raise TypeError, "flat is not supported inside map_values" unless mode == :array
+        raise TypeError, "flat is not supported inside map_values" unless output_type == :array
         unless mapped.value.is_a?(Array)
           raise TypeError, "flat expects Array, got #{mapped.value.class}"
         end
@@ -220,9 +221,9 @@ module Jrf
     class MapReducer
       attr_reader :slots
 
-      def initialize(type, mode)
-        @type = type
-        @mode = mode
+      def initialize(input_type, output_type)
+        @input_type = input_type
+        @output_type = output_type
         @slots = {}
       end
 
@@ -231,12 +232,12 @@ module Jrf
       end
 
       def finish
-        case @type
+        case @input_type
         when :array
           keys = @slots.keys.sort
           [keys.map { |k| Stage.resolve_template(@slots[k].template, @slots[k].reducers) }]
         when :hash
-          if @mode == :array
+          if @output_type == :array
             [@slots.map { |_k, s| Stage.resolve_template(s.template, s.reducers) }]
           else
             result = {}
