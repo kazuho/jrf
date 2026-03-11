@@ -22,54 +22,43 @@ module Jrf
     # @yieldparam value output value
     # @return [Array, nil] output values (without block), or nil (with block)
     def call(input, &on_output)
-      if on_output
-        call_streaming(input, &on_output)
-      else
+      if on_output.nil?
         results = []
-        call_streaming(input) { |v| results << v }
-        results
+        on_output = proc { |value| results << value }
       end
+
+      begin
+        input.each { |value| process_value(value, @stages, &on_output) }
+      ensure
+        flush_reducers(@stages, &on_output)
+      end
+
+      results unless results.nil?
     end
 
     private
 
-    def call_streaming(input, &on_output)
-      error = nil
-      begin
-        input.each { |value| process_value(value, @stages, &on_output) }
-      rescue StandardError => e
-        error = e
-      ensure
-        flush_reducers(@stages, &on_output)
-      end
-      raise error if error
-    end
+    def process_value(value, stages, idx = 0, &on_output)
+      while idx < stages.length
+        value = stages[idx].call(value)
 
-    def process_value(input, stages, &on_output)
-      current_values = [input]
-
-      stages.each do |stage|
-        next_values = []
-
-        current_values.each do |value|
-          out = stage.call(value)
-          if out.equal?(Control::DROPPED)
-            next
-          elsif out.is_a?(Control::Flat)
-            unless out.value.is_a?(Array)
-              raise TypeError, "flat expects Array, got #{out.value.class}"
-            end
-            next_values.concat(out.value)
-          else
-            next_values << out
+        if value.equal?(Control::DROPPED)
+          return
+        elsif value.is_a?(Control::Flat)
+          value = value.value
+          unless value.is_a?(Array)
+            raise TypeError, "flat expects Array, got #{value.class}"
           end
+          value.each do |child|
+            process_value(child, stages, idx + 1, &on_output)
+          end
+          return
         end
 
-        return if next_values.empty?
-        current_values = next_values
+        idx += 1
       end
 
-      current_values.each(&on_output)
+      on_output.call(value)
     end
 
     def flush_reducers(stages, &on_output)

@@ -39,26 +39,35 @@ module Jrf
       @ctx.__jrf_current_stage = self
       result = @ctx.instance_eval(&@block)
 
-      if @mode.nil? && @reducers.any?
-        @mode = :reducer
-        @template = result
-      elsif @mode.nil?
-        @mode = :passthrough
+      if @mode.nil?
+        if @reducers.any?
+          @mode = :reducer
+          @template = result
+        else
+          @mode = :passthrough
+        end
       end
 
       (@mode == :reducer) ? Control::DROPPED : result
     end
 
-    def allocate_reducer(value, initial:, finish: nil, &step_fn)
+    def step_reduce(value, initial:, finish: nil, &step_fn)
       idx = @cursor
-      finish_rows = finish || ->(acc) { [acc] }
-      @reducers[idx] ||= Reducers.reduce(initial, finish: finish_rows, &step_fn)
+
+      if @reducers[idx].nil?
+        finish_rows = finish || ->(acc) { [acc] }
+        @reducers[idx] = Reducers.reduce(initial, finish: finish_rows, &step_fn)
+        result = ReducerToken.new(idx)
+      else
+        result = Control::DROPPED
+      end
+
       @reducers[idx].step(value)
-      @cursor += 1
-      ReducerToken.new(idx)
+      @cursor = idx + 1
+      result
     end
 
-    def allocate_map(builtin, collection, &block)
+    def step_map(builtin, collection, &block)
       idx = @cursor
       @cursor += 1
 
@@ -103,7 +112,7 @@ module Jrf
       ReducerToken.new(idx)
     end
 
-    def allocate_group_by(key, &block)
+    def step_group_by(key, &block)
       idx = @cursor
       map_reducer = (@reducers[idx] ||= MapReducer.new(:group_by, false))
 
