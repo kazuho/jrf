@@ -469,6 +469,14 @@ assert_equal(
   "array percentile output"
 )
 
+stdout, stderr, status = run_jrf('percentile(_["foo"], 0.25.step(1.0, 0.25))', input_sum)
+assert_success(status, stderr, "enumerable percentile")
+assert_equal(
+  ['[1,2,3,4]'],
+  lines(stdout),
+  "enumerable percentile output"
+)
+
 input_with_nil = <<~NDJSON
   {"foo":1}
   {"foo":null}
