@@ -51,7 +51,7 @@ module Jrf
       (@mode == :reducer) ? Control::DROPPED : result
     end
 
-    def allocate_reducer(value, initial:, finish: nil, &step_fn)
+    def step_reduce(value, initial:, finish: nil, &step_fn)
       idx = @cursor
 
       if @reducers[idx].nil?
@@ -67,7 +67,7 @@ module Jrf
       result
     end
 
-    def allocate_map(builtin, collection, &block)
+    def step_map(builtin, collection, &block)
       idx = @cursor
       @cursor += 1
 
@@ -112,7 +112,7 @@ module Jrf
       ReducerToken.new(idx)
     end
 
-    def allocate_group_by(key, &block)
+    def step_group_by(key, &block)
       idx = @cursor
       map_reducer = (@reducers[idx] ||= MapReducer.new(:group_by, false))
 

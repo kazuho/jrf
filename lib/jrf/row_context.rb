@@ -13,7 +13,7 @@ module Jrf
       def define_reducer(name, &definition)
         define_method(name) do |*args, **kwargs, &block|
           spec = definition.call(self, *args, **kwargs, block: block)
-          @__jrf_current_stage.allocate_reducer(
+          @__jrf_current_stage.step_reduce(
             spec.fetch(:value),
             initial: reducer_initial_value(spec.fetch(:initial)),
             finish: spec[:finish],
@@ -161,24 +161,24 @@ module Jrf
     def reduce(initial, &block)
       raise ArgumentError, "reduce requires a block" unless block
 
-      @__jrf_current_stage.allocate_reducer(current_input, initial: initial, &block)
+      @__jrf_current_stage.step_reduce(current_input, initial: initial, &block)
     end
 
     def map(&block)
       raise ArgumentError, "map requires a block" unless block
 
-      @__jrf_current_stage.allocate_map(:map, @obj, &block)
+      @__jrf_current_stage.step_map(:map, @obj, &block)
     end
 
     def map_values(&block)
       raise ArgumentError, "map_values requires a block" unless block
 
-      @__jrf_current_stage.allocate_map(:map_values, @obj, &block)
+      @__jrf_current_stage.step_map(:map_values, @obj, &block)
     end
 
     def group_by(key, &block)
       block ||= proc { group }
-      @__jrf_current_stage.allocate_group_by(key, &block)
+      @__jrf_current_stage.step_group_by(key, &block)
     end
 
     private

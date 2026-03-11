@@ -960,11 +960,11 @@ assert_equal([], j.call([]), "library empty input")
 
 ctx = Jrf::RowContext.new
 stage = Jrf::Stage.new(ctx, proc { })
-first_token = stage.allocate_reducer(1, initial: 0) { |acc, v| acc + v }
-assert_equal(0, first_token.index, "allocate_reducer returns token while classifying reducer stage")
+first_token = stage.step_reduce(1, initial: 0) { |acc, v| acc + v }
+assert_equal(0, first_token.index, "step_reduce returns token while classifying reducer stage")
 stage.instance_variable_set(:@mode, :reducer)
 stage.instance_variable_set(:@cursor, 0)
-second_token = stage.allocate_reducer(2, initial: 0) { |acc, v| acc + v }
+second_token = stage.step_reduce(2, initial: 0) { |acc, v| acc + v }
 raise "expected DROPPED for established reducer slot" unless second_token.equal?(Jrf::Control::DROPPED)
 
 puts "ok"
