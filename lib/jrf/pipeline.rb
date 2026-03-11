@@ -38,31 +38,29 @@ module Jrf
 
     private
 
-    def process_value(input, stages, &on_output)
-      current_values = [input]
+    def process_value(value, stages, idx = 0, &on_output)
+      while idx < stages.length
+        out = stages[idx].call(value)
 
-      stages.each do |stage|
-        next_values = []
-
-        current_values.each do |value|
-          out = stage.call(value)
-          if out.equal?(Control::DROPPED)
-            next
-          elsif out.is_a?(Control::Flat)
-            unless out.value.is_a?(Array)
-              raise TypeError, "flat expects Array, got #{out.value.class}"
-            end
-            next_values.concat(out.value)
-          else
-            next_values << out
+        if out.equal?(Control::DROPPED)
+          return
+        elsif out.is_a?(Control::Flat)
+          unless out.value.is_a?(Array)
+            raise TypeError, "flat expects Array, got #{out.value.class}"
           end
+
+          out.value.each do |child|
+            process_value(child, stages, idx + 1, &on_output)
+          end
+          return
+        else
+          value = out
         end
 
-        return if next_values.empty?
-        current_values = next_values
+        idx += 1
       end
 
-      current_values.each(&on_output)
+      on_output.call(value)
     end
 
     def flush_reducers(stages, &on_output)
