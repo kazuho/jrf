@@ -22,28 +22,21 @@ module Jrf
     # @yieldparam value output value
     # @return [Array, nil] output values (without block), or nil (with block)
     def call(input, &on_output)
-      if on_output
-        call_streaming(input, &on_output)
-      else
+      if on_output.nil?
         results = []
-        call_streaming(input) { |v| results << v }
-        results
+        on_output = proc { |value| results << value }
       end
-    end
 
-    private
-
-    def call_streaming(input, &on_output)
-      error = nil
       begin
         input.each { |value| process_value(value, @stages, &on_output) }
-      rescue StandardError => e
-        error = e
       ensure
         flush_reducers(@stages, &on_output)
       end
-      raise error if error
+
+      results unless results.nil?
     end
+
+    private
 
     def process_value(input, stages, &on_output)
       current_values = [input]
