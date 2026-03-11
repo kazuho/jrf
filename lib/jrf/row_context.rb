@@ -136,15 +136,8 @@ module Jrf
     end
 
     define_reducer(:percentile) do |ctx, value, percentage, block: nil|
-      scalar = percentage.is_a?(Numeric)
-      percentages =
-        if scalar
-          [percentage]
-        elsif percentage.is_a?(Enumerable)
-          percentage.to_a
-        else
-          [percentage]
-        end
+      scalar = !percentage.is_a?(Enumerable)
+      percentages = scalar ? [percentage] : percentage.to_a
       percentages.each { |p| ctx.send(:validate_percentile!, p) }
 
       finish =
