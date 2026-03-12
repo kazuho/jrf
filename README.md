@@ -47,7 +47,7 @@ jrf 'group_by(_["item"]) { |row| sum(row["count"] * row["price"]) }'
 jrf '$perc ||= 0.005.step(0.995, 0.01); group_by(_["group"]) { |row| percentile(row["score"], $perc) }'
 ```
 
-[Need help writing a filter? Ask ChatGPT!](https://chatgpt.com/g/g-69b209ff063481919ce61f7f7c204a21-jrf-helper)
+**[Need help writing a filter? Ask ChatGPT!](https://chatgpt.com/g/g-69b209ff063481919ce61f7f7c204a21-jrf-helper)**
 
 ## WHY JRF?
 
