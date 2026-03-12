@@ -208,19 +208,19 @@ jrf '_["msg"] >> reduce(nil) { |acc, v| acc ? "#{acc} #{v}" : v }'
 jrf '_["count"] >> reduce(0) { |acc, v| acc + v }'
 ```
 
-### sort()
 ### sort(key_expr)
 ### sort(key_expr) { |a, b| ... }
+### sort
 
 Sorts rows.
-With no argument, rows are sorted by the current target object.
 With one argument, rows are sorted by key expression.
 With a block, rows are sorted by custom comparator.
+Wit no argument, rows are sorted by the current target value. This is most useful when the target value is a number or a string.
 
 ```sh
-jrf 'sort >> _["id"]'
 jrf 'sort(_["at"]) >> _["id"]'
 jrf 'sort { |a, b| b["at"] <=> a["at"] } >> _["id"]'
+jrf 'sort'
 ```
 
 ### map { |x| ... }
