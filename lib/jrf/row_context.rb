@@ -173,13 +173,13 @@ module Jrf
     def map(&block)
       raise ArgumentError, "map requires a block" unless block
 
-      @__jrf_current_stage.step_map(:map, @obj, &block)
+      @__jrf_current_stage.step_map(:map, current_input, &block)
     end
 
     def map_values(&block)
       raise ArgumentError, "map_values requires a block" unless block
 
-      @__jrf_current_stage.step_map(:map_values, @obj, &block)
+      @__jrf_current_stage.step_map(:map_values, current_input, &block)
     end
 
     def group_by(key, &block)

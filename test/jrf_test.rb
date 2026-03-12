@@ -847,6 +847,14 @@ stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 } >> map { |x| 
 assert_success(status, stderr, "chained map transforms")
 assert_equal(['[20,110,1010]', '[30,210,2010]', '[40,310,3010]'], lines(stdout), "chained map transforms output")
 
+stdout, stderr, status = run_jrf('map { map { |y| [ sum(y[0]), sum(y[1]) ] } }', "[[[1,2]]]\n[[[3,4]]]\n")
+assert_success(status, stderr, "nested map reducer binds to current target")
+assert_equal(['[[[4,6]]]'], lines(stdout), "nested map reducer output")
+
+stdout, stderr, status = run_jrf('map_values { |obj| map_values { |v| sum(v) } }', "{\"a\":{\"x\":1,\"y\":2},\"b\":{\"x\":10,\"y\":20}}\n{\"a\":{\"x\":3,\"y\":4},\"b\":{\"x\":30,\"y\":40}}\n")
+assert_success(status, stderr, "nested map_values reducer binds to current target")
+assert_equal(['{"a":{"x":4,"y":6},"b":{"x":40,"y":60}}'], lines(stdout), "nested map_values reducer output")
+
 input_gb = <<~NDJSON
   {"status":200,"path":"/a","latency":10}
   {"status":404,"path":"/b","latency":50}
@@ -944,9 +952,17 @@ assert_equal([[2, 3], [4, 5]], j.call([[1, 2], [3, 4]]), "library map transform"
 j = Jrf.new(proc { map { |x| sum(x) } })
 assert_equal([[4, 6]], j.call([[1, 2], [3, 4]]), "library map reduce")
 
+# nested map reduce binds to current target
+j = Jrf.new(proc { map { map { |y| [sum(y[0]), sum(y[1])] } } })
+assert_equal([[[[4, 6]]]], j.call([[[[1, 2]]], [[[3, 4]]]]), "library nested map reduce")
+
 # map_values transform
 j = Jrf.new(proc { map_values { |v| v * 10 } })
 assert_equal([{"a" => 10, "b" => 20}], j.call([{"a" => 1, "b" => 2}]), "library map_values transform")
+
+# nested map_values reduce binds to current target
+j = Jrf.new(proc { map_values { |obj| map_values { |v| sum(v) } } })
+assert_equal([{"a" => {"x" => 4, "y" => 6}, "b" => {"x" => 40, "y" => 60}}], j.call([{"a" => {"x" => 1, "y" => 2}, "b" => {"x" => 10, "y" => 20}}, {"a" => {"x" => 3, "y" => 4}, "b" => {"x" => 30, "y" => 40}}]), "library nested map_values reduce")
 
 # map hash transform
 j = Jrf.new(proc { map { |k, v| "#{k}=#{v}" } })
