@@ -59,6 +59,10 @@ module Jrf
       end
     end
 
+    define_reducer(:count_if) do |_ctx, condition, block: nil|
+      { value: condition, initial: 0, step: ->(acc, v) { v ? (acc + 1) : acc } }
+    end
+
     define_reducer(:min) do |_ctx, value, block: nil|
       { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v < acc ? v : acc) } }
     end
