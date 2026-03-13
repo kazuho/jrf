@@ -230,8 +230,8 @@ jrf 'sort'
 Maps each element of an Array, or each entry of a Hash (yielding `[key, value]` pairs like Ruby's `Hash#map`), returning an Array.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the element.
 
-If the block is a plain expression, `map` behaves like a regular per-row transform.
-If the block calls reducers, each array position or hash key gets its own independent reducer instance across rows.
+If the block is a plain expression, `map` transforms each element per row.
+If the block uses aggregations (e.g. `sum`), each array position (or hash key) gets its own independent accumulator across rows.
 
 ```sh
 jrf 'map { |x| x + 1 }'
@@ -253,14 +253,26 @@ jrf '_["values"] >> map { |x| min(x) }'
 Maps each value of a Hash and returns a Hash.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the value.
 
-If the block is a plain expression, `map_values` behaves like a regular per-row transform.
-If the block calls reducers, each key gets its own independent reducer instance across rows.
+If the block is a plain expression, `map_values` transforms each value per row.
+If the block uses aggregations, each key gets its own independent accumulator across rows.
 
 ```sh
 jrf 'map_values { |v| v * 10 }'
 
 jrf 'map_values { |v| sum(v) }'
 # {"a":1,"b":10}, {"a":2,"b":20} → {"a":3,"b":30}
+```
+
+### apply { |x| ... }
+
+Runs an expression over the current value (an Array), processing all elements within that single value.
+Unlike `map` which accumulates across rows (the same position across multiple inputs), `apply` aggregates within one value (all elements of a single array), completing immediately.
+Inside the block, `_` remains the surrounding row value; use the block parameter for each element.
+
+```sh
+# normalize values by their sum
+jrf '[_, apply { |x| sum(x) }] >> _[0].map { |x| x.to_f / _[1] }'
+# [3,7] → [0.3,0.7]
 ```
 
 ### group_by(key_expr)

@@ -113,6 +113,35 @@ module Jrf
       ReducerToken.new(idx)
     end
 
+    def step_apply(collection, &block)
+      raise TypeError, "apply expects Array, got #{collection.class}" unless collection.is_a?(Array)
+
+      apply_reducers = []
+      template = nil
+      results = []
+
+      collection.each do |v|
+        with_scoped_reducers(apply_reducers) do
+          result = @ctx.send(:__jrf_with_current_input, v) { block.call(v) }
+          template ||= result
+          results << result
+        end
+      end
+
+      if apply_reducers.any?
+        self.class.resolve_template(template, apply_reducers)
+      else
+        results.each_with_object([]) do |mapped, arr|
+          next if mapped.equal?(Control::DROPPED)
+          if mapped.is_a?(Control::Flat)
+            arr.concat(Array(mapped.value))
+          else
+            arr << mapped
+          end
+        end
+      end
+    end
+
     def step_group_by(key, &block)
       idx = @cursor
       map_reducer = (@reducers[idx] ||= MapReducer.new(:group_by, false))

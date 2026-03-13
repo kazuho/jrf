@@ -182,6 +182,12 @@ module Jrf
       @__jrf_current_stage.step_map(:map_values, current_input, &block)
     end
 
+    def apply(&block)
+      raise ArgumentError, "apply requires a block" unless block
+
+      @__jrf_current_stage.step_apply(current_input, &block)
+    end
+
     def group_by(key, &block)
       block ||= proc { group }
       @__jrf_current_stage.step_group_by(key, &block)

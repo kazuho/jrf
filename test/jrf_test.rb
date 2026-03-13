@@ -855,6 +855,21 @@ stdout, stderr, status = run_jrf('map_values { |obj| map_values { |v| sum(v) } }
 assert_success(status, stderr, "nested map_values reducer binds to current target")
 assert_equal(['{"a":{"x":4,"y":6},"b":{"x":40,"y":60}}'], lines(stdout), "nested map_values reducer output")
 
+# apply - aggregation
+stdout, stderr, status = run_jrf('[apply { |x| sum(x["foo"]) }, _.length]', '[{"foo":1},{"foo":2}]' + "\n" + '[{"foo":10}]' + "\n")
+assert_success(status, stderr, "apply with sum")
+assert_equal(["[3,2]", "[10,1]"], lines(stdout), "apply with sum output")
+
+# apply - passthrough
+stdout, stderr, status = run_jrf('apply { |x| x["foo"] }', '[{"foo":1},{"foo":2}]' + "\n")
+assert_success(status, stderr, "apply passthrough")
+assert_equal(["[1,2]"], lines(stdout), "apply passthrough output")
+
+# apply - percentile
+stdout, stderr, status = run_jrf('apply { |x| percentile(x, 0.5) }', '[10,20,30]' + "\n")
+assert_success(status, stderr, "apply with percentile")
+assert_equal(["20"], lines(stdout), "apply with percentile output")
+
 input_gb = <<~NDJSON
   {"status":200,"path":"/a","latency":10}
   {"status":404,"path":"/b","latency":50}
@@ -975,6 +990,18 @@ assert_equal([[["a", 1], ["b", 2]]], j.call([{"a" => 1, "b" => 2}]), "library ma
 # map hash reduce
 j = Jrf.new(proc { map { |k, v| sum(v + k.length) } })
 assert_equal([[5, 7]], j.call([{"a" => 1, "b" => 2}, {"a" => 2, "b" => 3}]), "library map hash reduce")
+
+# apply - aggregation
+j = Jrf.new(proc { [apply { |x| sum(x["foo"]) }, _.length] })
+assert_equal([[3, 2], [10, 1]], j.call([[{"foo" => 1}, {"foo" => 2}], [{"foo" => 10}]]), "library apply reducer")
+
+# apply - passthrough
+j = Jrf.new(proc { apply { |x| x["foo"] } })
+assert_equal([[1, 2]], j.call([[{"foo" => 1}, {"foo" => 2}]]), "library apply passthrough")
+
+# apply - percentile
+j = Jrf.new(proc { apply { |x| percentile(x, 0.5) } })
+assert_equal([20], j.call([[10, 20, 30]]), "library apply percentile")
 
 # group_by
 j = Jrf.new(proc { group_by(_["k"]) { count() } })
