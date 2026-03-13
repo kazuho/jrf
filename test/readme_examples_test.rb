@@ -2,7 +2,7 @@
 
 require_relative "test_helper"
 
-class ReadmeExamplesTest < Minitest::Test
+class ReadmeExamplesTest < JrfTestCase
   def test_built_in_function_examples
     readme_examples = extract_readme_examples("./README.md", section: "BUILT-IN FUNCTIONS")
     refute_empty(readme_examples, "expected README built-in examples")

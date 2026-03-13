@@ -2,8 +2,8 @@
 
 require_relative "test_helper"
 
-class LibraryApiTest < Minitest::Test
-  def test_library_api
+class LibraryApiTest < JrfTestCase
+  def test_basic_pipeline_api
     j = Jrf.new(proc { _ })
     assert_equal([{"a" => 1}, {"a" => 2}], j.call([{"a" => 1}, {"a" => 2}]), "library passthrough")
 
@@ -24,7 +24,9 @@ class LibraryApiTest < Minitest::Test
 
     j = Jrf.new(proc { {total: sum(_["a"]), n: count()} })
     assert_equal([{total: 6, n: 3}], j.call([{"a" => 1}, {"a" => 2}, {"a" => 3}]), "library structured reducers")
+  end
 
+  def test_map_and_map_values_api
     j = Jrf.new(proc { map { |x| x + 1 } })
     assert_equal([[2, 3], [4, 5]], j.call([[1, 2], [3, 4]]), "library map transform")
 
@@ -48,7 +50,9 @@ class LibraryApiTest < Minitest::Test
 
     j = Jrf.new(proc { map { |k, v| sum(v + k.length) } })
     assert_equal([[5, 7]], j.call([{"a" => 1, "b" => 2}, {"a" => 2, "b" => 3}]), "library map hash reduce")
+  end
 
+  def test_apply_and_group_by_api
     j = Jrf.new(proc { [apply { |x| sum(x["foo"]) }, _.length] })
     assert_equal([[3, 2], [10, 1]], j.call([[{"foo" => 1}, {"foo" => 2}], [{"foo" => 10}]]), "library apply reducer")
 
@@ -69,7 +73,9 @@ class LibraryApiTest < Minitest::Test
 
     j = Jrf.new(proc { group_by(_["k"]) { count() } })
     assert_equal([{"x" => 2, "y" => 1}], j.call([{"k" => "x"}, {"k" => "x"}, {"k" => "y"}]), "library group_by")
+  end
 
+  def test_percentile_and_control_flow_api
     j = Jrf.new(proc { percentile(_["a"], _["p"]) })
     assert_equal([2], j.call([{"a" => 1, "p" => 0.5}, {"a" => 2, "p" => [0.5, 1.0]}, {"a" => 3, "p" => [0.5, 1.0]}]), "library percentile configuration fixed by first row")
 
@@ -105,7 +111,9 @@ class LibraryApiTest < Minitest::Test
 
     j = Jrf.new(proc { sum(_) })
     assert_equal([], j.call([]), "library empty input")
+  end
 
+  def test_stage_reduce_control_tokens
     ctx = Jrf::RowContext.new
     stage = Jrf::Stage.new(ctx, proc { })
     first_token = stage.step_reduce(1, initial: 0) { |acc, v| acc + v }

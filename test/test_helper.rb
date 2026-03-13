@@ -15,63 +15,6 @@ require "zlib"
 require_relative "../lib/jrf"
 require_relative "../lib/jrf/cli/runner"
 
-def run_jrf(expr, input, *opts)
-  Open3.capture3("./exe/jrf", *opts, expr, stdin_data: input)
-end
-
-def assert_success(status, stderr, msg = nil)
-  return if status.success?
-
-  flunk("expected success#{msg ? " (#{msg})" : ""}, got failure\nstderr: #{stderr}")
-end
-
-def assert_failure(status, msg = nil)
-  return unless status.success?
-
-  flunk("expected failure#{msg ? " (#{msg})" : ""}, got success")
-end
-
-def assert_float_close(expected, actual, epsilon = 1e-9, msg = nil)
-  assert_in_delta(expected, actual, epsilon, msg)
-end
-
-def lines(str)
-  str.lines.map(&:strip).reject(&:empty?)
-end
-
-def json_stream_to_ndjson(text)
-  JSON.parse("[#{text}]").map { |value| "#{JSON.generate(value)}\n" }.join
-end
-
-def extract_readme_examples(path, section:)
-  content = File.read(path)
-  section_match = content.match(/^## #{Regexp.escape(section)}\n(.*?)(?=^## |\z)/m)
-  raise "section not found: #{section}" unless section_match
-
-  examples = []
-  section_text = section_match[1]
-  section_text.scan(/```sh\n(.*?)```/m) do |block_match|
-    block = block_match.first
-    lines = block.lines.map(&:chomp)
-    index = 0
-    while index < lines.length
-      line = lines[index]
-      if (command_match = line.match(/\Ajrf '(.*)'\z/))
-        comment = lines[index + 1]
-        if comment && (example_match = comment.match(/\A# (.+) → (.+)\z/))
-          examples << {
-            expr: command_match[1],
-            input: json_stream_to_ndjson(example_match[1]),
-            output: lines(json_stream_to_ndjson(example_match[2]))
-          }
-        end
-      end
-      index += 1
-    end
-  end
-  examples
-end
-
 class RecordingRunner < Jrf::CLI::Runner
   attr_reader :writes
 
@@ -86,6 +29,69 @@ class RecordingRunner < Jrf::CLI::Runner
     return if str.empty?
 
     @writes << str
+  end
+end
+
+class JrfTestCase < Minitest::Test
+  def setup
+    File.chmod(0o755, "./exe/jrf")
+  end
+
+  def run_jrf(expr, input, *opts)
+    Open3.capture3("./exe/jrf", *opts, expr, stdin_data: input)
+  end
+
+  def assert_success(status, stderr, msg = nil)
+    return if status.success?
+
+    flunk("expected success#{msg ? " (#{msg})" : ""}, got failure\nstderr: #{stderr}")
+  end
+
+  def assert_failure(status, msg = nil)
+    return unless status.success?
+
+    flunk("expected failure#{msg ? " (#{msg})" : ""}, got success")
+  end
+
+  def assert_float_close(expected, actual, epsilon = 1e-9, msg = nil)
+    assert_in_delta(expected, actual, epsilon, msg)
+  end
+
+  def lines(str)
+    str.lines.map(&:strip).reject(&:empty?)
+  end
+
+  def json_stream_to_ndjson(text)
+    JSON.parse("[#{text}]").map { |value| "#{JSON.generate(value)}\n" }.join
+  end
+
+  def extract_readme_examples(path, section:)
+    content = File.read(path)
+    section_match = content.match(/^## #{Regexp.escape(section)}\n(.*?)(?=^## |\z)/m)
+    raise "section not found: #{section}" unless section_match
+
+    examples = []
+    section_text = section_match[1]
+    section_text.scan(/```sh\n(.*?)```/m) do |block_match|
+      block = block_match.first
+      lines = block.lines.map(&:chomp)
+      index = 0
+      while index < lines.length
+        line = lines[index]
+        if (command_match = line.match(/\Ajrf '(.*)'\z/))
+          comment = lines[index + 1]
+          if comment && (example_match = comment.match(/\A# (.+) → (.+)\z/))
+            examples << {
+              expr: command_match[1],
+              input: json_stream_to_ndjson(example_match[1]),
+              output: lines(json_stream_to_ndjson(example_match[2]))
+            }
+          end
+        end
+        index += 1
+      end
+    end
+    examples
   end
 end
 

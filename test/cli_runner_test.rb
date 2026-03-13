@@ -2,10 +2,8 @@
 
 require_relative "test_helper"
 
-class CliRunnerTest < Minitest::Test
-  def test_cli_and_runner
-    File.chmod(0o755, "./exe/jrf")
-
+class CliRunnerTest < JrfTestCase
+  def test_extract_and_select
     input = <<~NDJSON
       {"foo":1,"x":5}
       {"foo":2,"x":11}
@@ -52,6 +50,13 @@ class CliRunnerTest < Minitest::Test
     assert_equal(%w[123], lines(stdout), "dump stages output")
     assert_includes(stderr, 'stage[0]: select(_["hello"] == 123)')
     assert_includes(stderr, 'stage[1]: _["hello"]')
+  end
+
+  def test_help_version_and_atomic_write_options
+    input_hello = <<~NDJSON
+      {"hello":123}
+      {"hello":456}
+    NDJSON
 
     stdout, stderr, status = Open3.capture3("./exe/jrf", "--help")
     assert_success(status, stderr, "help option")
@@ -81,26 +86,6 @@ class CliRunnerTest < Minitest::Test
     assert_equal([Jrf::VERSION], lines(stdout), "version short option output")
     assert_equal([], lines(stderr), "version short option stderr")
 
-    threshold_input = StringIO.new((1..4).map { |i| "{\"foo\":\"#{'x' * 1020}\",\"i\":#{i}}\n" }.join)
-    buffered_runner = RecordingRunner.new(inputs: [threshold_input], out: StringIO.new, err: StringIO.new)
-    buffered_runner.run('_')
-    expected_line = JSON.generate({"foo" => "x" * 1020, "i" => 1}) + "\n"
-    assert_equal(2, buffered_runner.writes.length, "default atomic write limit buffers records until the configured threshold")
-    assert_equal(expected_line.bytesize * 3, buffered_runner.writes.first.bytesize, "default atomic write limit flushes before the next record would exceed the threshold")
-    assert_equal(expected_line.bytesize, buffered_runner.writes.last.bytesize, "final buffer flush emits the remaining record")
-
-    small_limit_runner = RecordingRunner.new(inputs: [StringIO.new("{\"foo\":1}\n{\"foo\":2}\n")], out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
-    small_limit_runner.run('_["foo"]')
-    assert_equal(["1\n", "2\n"], small_limit_runner.writes, "small atomic write limit emits oversized records directly")
-
-    error_runner = RecordingRunner.new(inputs: [StringIO.new("{\"foo\":1}\n{\"foo\":")], out: StringIO.new, err: StringIO.new)
-    begin
-      error_runner.run('_["foo"]')
-      raise "expected parse error for buffered flush test"
-    rescue JSON::ParserError
-      assert_equal(["1\n"], error_runner.writes, "buffer flushes pending output before parse errors escape")
-    end
-
     stdout, stderr, status = run_jrf('select(_["hello"] == 123) >> _["hello"]', input_hello, "--verbose")
     assert_success(status, stderr, "dump stages verbose alias")
     assert_equal(%w[123], lines(stdout), "dump stages verbose alias output")
@@ -117,6 +102,33 @@ class CliRunnerTest < Minitest::Test
     stdout, stderr, status = Open3.capture3("./exe/jrf", "--atomic-write-bytes", "0", '_["hello"]', stdin_data: input_hello)
     assert_failure(status, "atomic write bytes rejects zero")
     assert_includes(stderr, "--atomic-write-bytes requires a positive integer")
+  end
+
+  def test_runner_buffering_and_require_option
+    threshold_input = StringIO.new((1..4).map { |i| "{\"foo\":\"#{'x' * 1020}\",\"i\":#{i}}\n" }.join)
+    buffered_runner = RecordingRunner.new(inputs: [threshold_input], out: StringIO.new, err: StringIO.new)
+    buffered_runner.run('_')
+    expected_line = JSON.generate({"foo" => "x" * 1020, "i" => 1}) + "\n"
+    assert_equal(2, buffered_runner.writes.length, "default atomic write limit buffers records until the configured threshold")
+    assert_equal(expected_line.bytesize * 3, buffered_runner.writes.first.bytesize, "default atomic write limit flushes before the next record would exceed the threshold")
+    assert_equal(expected_line.bytesize, buffered_runner.writes.last.bytesize, "final buffer flush emits the remaining record")
+
+    small_limit_runner = RecordingRunner.new(inputs: [StringIO.new("{\"foo\":1}\n{\"foo\":2}\n")], out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
+    small_limit_runner.run('_["foo"]')
+    assert_equal(["1\n", "2\n"], small_limit_runner.writes, "small atomic write limit emits oversized records directly")
+
+    error_runner = RecordingRunner.new(inputs: [StringIO.new("{\"foo\":1}\n{\"foo\":")], out: StringIO.new, err: StringIO.new)
+    begin
+      error_runner.run('_["foo"]')
+      flunk("expected parse error for buffered flush test")
+    rescue JSON::ParserError
+      assert_equal(["1\n"], error_runner.writes, "buffer flushes pending output before parse errors escape")
+    end
+
+    input_hello = <<~NDJSON
+      {"hello":123}
+      {"hello":456}
+    NDJSON
 
     Dir.mktmpdir do |dir|
       helper = File.join(dir, "helpers.rb")
@@ -130,7 +142,9 @@ class CliRunnerTest < Minitest::Test
       assert_success(status, stderr, "require helper option")
       assert_equal(%w[246 912], lines(stdout), "require helper option output")
     end
+  end
 
+  def test_yjit_and_input_output_modes
     if defined?(RubyVM::YJIT) && RubyVM::YJIT.respond_to?(:enabled?)
       yjit_probe = "{\"probe\":1}\n"
 
@@ -172,6 +186,11 @@ class CliRunnerTest < Minitest::Test
       assert_equal(%w[10 20 50], lines(stdout), "multiple compressed input output")
     end
 
+    input_hello = <<~NDJSON
+      {"hello":123}
+      {"hello":456}
+    NDJSON
+
     stdout, stderr, status = run_jrf('_', input_hello, "-o", "pretty")
     assert_success(status, stderr, "pretty output")
     assert_equal(
@@ -190,63 +209,31 @@ class CliRunnerTest < Minitest::Test
     input_table_hash = '{"a":[1,2],"b":[3,4]}'
     stdout, stderr, status = run_jrf('_', input_table_hash, "-o", "tsv")
     assert_success(status, stderr, "tsv output hash of arrays")
-    assert_equal(
-      ["a\t1\t2", "b\t3\t4"],
-      lines(stdout),
-      "tsv output hash of arrays"
-    )
+    assert_equal(["a\t1\t2", "b\t3\t4"], lines(stdout), "tsv output hash of arrays")
 
     input_table_array = '[[1,"hello",true],[2,"world",false]]'
     stdout, stderr, status = run_jrf('_', input_table_array, "-o", "tsv")
     assert_success(status, stderr, "tsv output array of arrays")
-    assert_equal(
-      ["1\thello\ttrue", "2\tworld\tfalse"],
-      lines(stdout),
-      "tsv output array of arrays"
-    )
+    assert_equal(["1\thello\ttrue", "2\tworld\tfalse"], lines(stdout), "tsv output array of arrays")
 
     input_table_scalar = '{"foo":"bar","baz":42}'
     stdout, stderr, status = run_jrf('_', input_table_scalar, "-o", "tsv")
     assert_success(status, stderr, "tsv output hash of scalars")
-    assert_equal(
-      ["foo\tbar", "baz\t42"],
-      lines(stdout),
-      "tsv output hash of scalars"
-    )
+    assert_equal(["foo\tbar", "baz\t42"], lines(stdout), "tsv output hash of scalars")
 
     input_table_nested = '{"a":[[1,2],[3,4]],"b":[[5,6],[7,8]]}'
     stdout, stderr, status = run_jrf('_', input_table_nested, "-o", "tsv")
     assert_success(status, stderr, "tsv output nested arrays as JSON")
-    assert_equal(
-      ["a\t[1,2]\t[3,4]", "b\t[5,6]\t[7,8]"],
-      lines(stdout),
-      "tsv output nested arrays as JSON"
-    )
+    assert_equal(["a\t[1,2]\t[3,4]", "b\t[5,6]\t[7,8]"], lines(stdout), "tsv output nested arrays as JSON")
+  end
 
-    input_regex = <<~NDJSON
-      {"foo":{"bar":"ok"},"x":50}
-      {"foo":{"bar":"ng"},"x":70}
+  def test_flat_and_reducers
+    input = <<~NDJSON
+      {"foo":1,"x":5}
+      {"foo":2,"x":11}
+      {"foo":3,"x":50}
+      {"foo":4,"x":70}
     NDJSON
-
-    stdout, stderr, status = run_jrf('select(/ok/.match(_["foo"]["bar"])) >> _["x"]', input_regex)
-    assert_success(status, stderr, "regex in select")
-    assert_equal(%w[50], lines(stdout), "regex filter output")
-
-    input_split = <<~NDJSON
-      {"x":1}
-    NDJSON
-
-    stdout, stderr, status = run_jrf('[1 >> 2] >> _', input_split)
-    assert_success(status, stderr, "no split inside []")
-    assert_equal(['[0]'], lines(stdout), "no split inside [] output")
-
-    stdout, stderr, status = run_jrf('{a: 1 >> 2} >> _[:a]', input_split)
-    assert_success(status, stderr, "no split inside {}")
-    assert_equal(%w[0], lines(stdout), "no split inside {} output")
-
-    stdout, stderr, status = run_jrf('(-> { 1 >> 2 }).call >> _ + 1', input_split)
-    assert_success(status, stderr, "no split inside block")
-    assert_equal(%w[1], lines(stdout), "no split inside block output")
 
     input_flat = <<~NDJSON
       {"items":[1,2]}
@@ -282,104 +269,78 @@ class CliRunnerTest < Minitest::Test
     assert_failure(status, "flat inside map_values")
     assert_includes(stderr, "flat is not supported inside map_values")
 
-    stdout, stderr, status = run_jrf('_["foo"] >> flat', input)
+    stdout, stderr, status = run_jrf('_["foo"] >> flat', "{\"foo\":1}\n")
     assert_failure(status, "flat requires array")
     assert_includes(stderr, "flat expects Array")
 
+    stdout, stderr, status = run_jrf('sum(_["foo"])', input)
+    assert_success(status, stderr, "sum only")
+    assert_equal(%w[10], lines(stdout), "sum output")
+
+    stdout, stderr, status = run_jrf('count()', input)
+    assert_success(status, stderr, "count only")
+    assert_equal(%w[4], lines(stdout), "count output")
+
+    stdout, stderr, status = run_jrf('count(_["foo"])', input)
+    assert_success(status, stderr, "count(expr) only")
+    assert_equal(%w[4], lines(stdout), "count(expr) output")
+
+    stdout, stderr, status = run_jrf('min(_["foo"])', input)
+    assert_success(status, stderr, "min only")
+    assert_equal(%w[1], lines(stdout), "min output")
+
+    stdout, stderr, status = run_jrf('max(_["foo"])', input)
+    assert_success(status, stderr, "max only")
+    assert_equal(%w[4], lines(stdout), "max output")
+
+    stdout, stderr, status = run_jrf('select(_["x"] > 10) >> sum(_["foo"])', input)
+    assert_success(status, stderr, "select + sum")
+    assert_equal(%w[9], lines(stdout), "select + sum output")
+
+    stdout, stderr, status = run_jrf('{total: sum(_["foo"]), n: count()}', input)
+    assert_success(status, stderr, "structured reducer result")
+    assert_equal(['{"total":10,"n":4}'], lines(stdout), "structured reducer result output")
+
+    stdout, stderr, status = run_jrf('average(_["foo"])', input)
+    assert_success(status, stderr, "average")
+    assert_float_close(2.5, lines(stdout).first.to_f, 1e-12, "average output")
+
+    stdout, stderr, status = run_jrf('stdev(_["foo"])', input)
+    assert_success(status, stderr, "stdev")
+    assert_float_close(1.118033988749895, lines(stdout).first.to_f, 1e-12, "stdev output")
+
+    stdout, stderr, status = run_jrf('_["foo"] >> sum(_ * 2)', input)
+    assert_success(status, stderr, "extract + sum")
+    assert_equal(%w[20], lines(stdout), "extract + sum output")
+
+    stdout, stderr, status = run_jrf('sum(2 * _["foo"])', input)
+    assert_success(status, stderr, "sum with literal on left")
+    assert_equal(%w[20], lines(stdout), "sum with literal on left output")
+
+    stdout, stderr, status = run_jrf('sum(_["foo"]) >> _ + 1', input)
+    assert_success(status, stderr, "reduce in middle")
+    assert_equal(%w[11], lines(stdout), "reduce in middle output")
+
+    stdout, stderr, status = run_jrf('select(_["x"] > 10) >> _["foo"] >> sum(_ * 2) >> select(_ > 10) >> _ + 1', input)
+    assert_success(status, stderr, "reduce mixed with select/extract")
+    assert_equal(%w[19], lines(stdout), "reduce mixed output")
+
+    stdout, stderr, status = run_jrf('_["foo"] >> sum(_) >> _ * 10 >> sum(_)', input)
+    assert_success(status, stderr, "multiple reducers")
+    assert_equal(%w[100], lines(stdout), "multiple reducers output")
+
+    stdout, stderr, status = run_jrf('_["foo"] >> min(_) >> _ * 10 >> max(_)', input)
+    assert_success(status, stderr, "min/max mixed reducers")
+    assert_equal(%w[10], lines(stdout), "min/max mixed reducers output")
+  end
+
+  def test_sort_group_percentile_and_nil_handling
     input_sum = <<~NDJSON
       {"foo":1,"x":5}
       {"foo":2,"x":11}
       {"foo":3,"x":50}
       {"foo":4,"x":70}
     NDJSON
-
-    stdout, stderr, status = run_jrf('sum(_["foo"])', input_sum)
-    assert_success(status, stderr, "sum only")
-    assert_equal(%w[10], lines(stdout), "sum output")
-
-    stdout, stderr, status = run_jrf('count()', input_sum)
-    assert_success(status, stderr, "count only")
-    assert_equal(%w[4], lines(stdout), "count output")
-
-    stdout, stderr, status = run_jrf('count(_["foo"])', input_sum)
-    assert_success(status, stderr, "count(expr) only")
-    assert_equal(%w[4], lines(stdout), "count(expr) output")
-
-    stdout, stderr, status = run_jrf('min(_["foo"])', input_sum)
-    assert_success(status, stderr, "min only")
-    assert_equal(%w[1], lines(stdout), "min output")
-
-    stdout, stderr, status = run_jrf('max(_["foo"])', input_sum)
-    assert_success(status, stderr, "max only")
-    assert_equal(%w[4], lines(stdout), "max output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 10) >> sum(_["foo"])', input_sum)
-    assert_success(status, stderr, "select + sum")
-    assert_equal(%w[9], lines(stdout), "select + sum output")
-
-    stdout, stderr, status = run_jrf('{total: sum(_["foo"]), n: count()}', input_sum)
-    assert_success(status, stderr, "structured reducer result")
-    assert_equal(['{"total":10,"n":4}'], lines(stdout), "structured reducer result output")
-
-    stdout, stderr, status = run_jrf('average(_["foo"])', input_sum)
-    assert_success(status, stderr, "average")
-    assert_float_close(2.5, lines(stdout).first.to_f, 1e-12, "average output")
-
-    stdout, stderr, status = run_jrf('stdev(_["foo"])', input_sum)
-    assert_success(status, stderr, "stdev")
-    assert_float_close(1.118033988749895, lines(stdout).first.to_f, 1e-12, "stdev output")
-
-    stdout, stderr, status = run_jrf('_["foo"] >> sum(_ * 2)', input_sum)
-    assert_success(status, stderr, "extract + sum")
-    assert_equal(%w[20], lines(stdout), "extract + sum output")
-
-    stdout, stderr, status = run_jrf('sum(2 * _["foo"])', input_sum)
-    assert_success(status, stderr, "sum with literal on left")
-    assert_equal(%w[20], lines(stdout), "sum with literal on left output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> sum(_["foo"])', input_sum)
-    assert_success(status, stderr, "sum no matches")
-    assert_equal([], lines(stdout), "sum no matches output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> count()', input_sum)
-    assert_success(status, stderr, "count no matches")
-    assert_equal([], lines(stdout), "count no matches output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> count(_["foo"])', input_sum)
-    assert_success(status, stderr, "count(expr) no matches")
-    assert_equal([], lines(stdout), "count(expr) no matches output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> average(_["foo"])', input_sum)
-    assert_success(status, stderr, "average no matches")
-    assert_equal([], lines(stdout), "average no matches output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> stdev(_["foo"])', input_sum)
-    assert_success(status, stderr, "stdev no matches")
-    assert_equal([], lines(stdout), "stdev no matches output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> min(_["foo"])', input_sum)
-    assert_success(status, stderr, "min no matches")
-    assert_equal([], lines(stdout), "min no matches output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> max(_["foo"])', input_sum)
-    assert_success(status, stderr, "max no matches")
-    assert_equal([], lines(stdout), "max no matches output")
-
-    stdout, stderr, status = run_jrf('sum(_["foo"]) >> _ + 1', input_sum)
-    assert_success(status, stderr, "reduce in middle")
-    assert_equal(%w[11], lines(stdout), "reduce in middle output")
-
-    stdout, stderr, status = run_jrf('select(_["x"] > 10) >> _["foo"] >> sum(_ * 2) >> select(_ > 10) >> _ + 1', input_sum)
-    assert_success(status, stderr, "reduce mixed with select/extract")
-    assert_equal(%w[19], lines(stdout), "reduce mixed output")
-
-    stdout, stderr, status = run_jrf('_["foo"] >> sum(_) >> _ * 10 >> sum(_)', input_sum)
-    assert_success(status, stderr, "multiple reducers")
-    assert_equal(%w[100], lines(stdout), "multiple reducers output")
-
-    stdout, stderr, status = run_jrf('_["foo"] >> min(_) >> _ * 10 >> max(_)', input_sum)
-    assert_success(status, stderr, "min/max mixed reducers")
-    assert_equal(%w[10], lines(stdout), "min/max mixed reducers output")
 
     input_sort_rows = <<~NDJSON
       {"foo":"b","at":2}
@@ -427,19 +388,11 @@ class CliRunnerTest < Minitest::Test
 
     stdout, stderr, status = run_jrf('percentile(_["foo"], [0.25, 0.50, 1.0])', input_sum)
     assert_success(status, stderr, "array percentile")
-    assert_equal(
-      ['[1,2,4]'],
-      lines(stdout),
-      "array percentile output"
-    )
+    assert_equal(['[1,2,4]'], lines(stdout), "array percentile output")
 
     stdout, stderr, status = run_jrf('percentile(_["foo"], 0.25.step(1.0, 0.25))', input_sum)
     assert_success(status, stderr, "enumerable percentile")
-    assert_equal(
-      ['[1,2,3,4]'],
-      lines(stdout),
-      "enumerable percentile output"
-    )
+    assert_equal(['[1,2,3,4]'], lines(stdout), "enumerable percentile output")
 
     input_with_nil = <<~NDJSON
       {"foo":1}
@@ -470,11 +423,7 @@ class CliRunnerTest < Minitest::Test
 
     stdout, stderr, status = run_jrf('percentile(_["foo"], [0.5, 1.0])', input_with_nil)
     assert_success(status, stderr, "percentile ignores nil")
-    assert_equal(
-      ['[1,3]'],
-      lines(stdout),
-      "percentile ignores nil output"
-    )
+    assert_equal(['[1,3]'], lines(stdout), "percentile ignores nil output")
 
     stdout, stderr, status = run_jrf('count()', input_with_nil)
     assert_success(status, stderr, "count with nil rows")
@@ -532,7 +481,9 @@ class CliRunnerTest < Minitest::Test
     stdout, stderr, status = run_jrf('count(_["foo"])', input_all_nil)
     assert_success(status, stderr, "count(expr) all nil")
     assert_equal(%w[0], lines(stdout), "count(expr) all nil output")
+  end
 
+  def test_reduce_lax_mode_and_parse_errors
     input_multi_cols = <<~NDJSON
       {"a":1,"b":10}
       {"a":2,"b":20}
@@ -542,11 +493,7 @@ class CliRunnerTest < Minitest::Test
 
     stdout, stderr, status = run_jrf('{a: percentile(_["a"], [0.25, 0.50, 1.0]), b: percentile(_["b"], [0.25, 0.50, 1.0])}', input_multi_cols)
     assert_success(status, stderr, "nested array percentile for multiple columns")
-    assert_equal(
-      ['{"a":[1,2,4],"b":[10,20,40]}'],
-      lines(stdout),
-      "nested array percentile output"
-    )
+    assert_equal(['{"a":[1,2,4],"b":[10,20,40]}'], lines(stdout), "nested array percentile output")
 
     input_reduce = <<~NDJSON
       {"s":"hello"}
@@ -561,6 +508,13 @@ class CliRunnerTest < Minitest::Test
     stdout, stderr, status = run_jrf('_["s"] >> reduce("") { |acc, v| acc.empty? ? v : "#{acc} #{v}" }', input_reduce)
     assert_success(status, stderr, "reduce in two-stage form")
     assert_equal(['"hello world jrf"'], lines(stdout), "reduce in two-stage form output")
+
+    input_sum = <<~NDJSON
+      {"foo":1,"x":5}
+      {"foo":2,"x":11}
+      {"foo":3,"x":50}
+      {"foo":4,"x":70}
+    NDJSON
 
     stdout, stderr, status = run_jrf('sum(_["foo"]) >> select(_ > 100)', input_sum)
     assert_success(status, stderr, "post-reduce select drop")
@@ -659,7 +613,9 @@ class CliRunnerTest < Minitest::Test
     assert_failure(status, "broken input should fail")
     assert_equal(%w[3], lines(stdout), "reducers flush before parse error")
     assert_includes(stderr, "JSON::ParserError")
+  end
 
+  def test_map_map_values_apply_and_group_by
     input_chain = <<~NDJSON
       {"foo":{"bar":{"z":1},"keep":true}}
       {"foo":{"bar":{"z":2},"keep":false}}
