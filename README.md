@@ -8,7 +8,8 @@ jrf 'STAGE >> STAGE >> STAGE ...' < file.ndjson
 jrf 'STAGE >> STAGE >> STAGE ...' file1.ndjson file2.ndjson.gz
 jrf --lax 'STAGE >> STAGE >> STAGE ...' < multiline.json
 jrf --lax 'STAGE >> STAGE >> STAGE ...' < file.jsonseq
-jrf --pretty '_' file.json file.ndjson
+jrf -o pretty '_' file.json file.ndjson
+jrf -o tsv 'group_by(_["status"]) { |row| average(row["latency"]) }'
 jrf --require ./my_helpers.rb 'my_method(_["value"])'
 jrf --help
 
@@ -93,8 +94,10 @@ Give it a try — install via RubyGems: `gem install jrf`
   - `--lax` allows multiline JSON texts and parses whitespace-delimited streams (also detects RS `0x1e` for JSON-SEQ).
   - If no filenames are provided, data is read from the standard input.
   - If the provided filename ends with `.gz`, the file is decompressed automatically.
-- Output is NDJSON (one compact JSON value per line).
-  - `--pretty` pretty-prints each output JSON value.
+- Output format is controlled by `-o`/`--output FORMAT`:
+  - `json` (default) — one compact JSON value per line (NDJSON).
+  - `pretty` — pretty-prints each output JSON value.
+  - `tsv` — tab-separated values. Hashes become rows keyed by their keys; arrays of arrays become rows directly. Scalar and null cells are printed as-is; nested arrays and objects are rendered as compact JSON. Useful for pasting into spreadsheets or piping through `column -t`.
   - Short outputs are grouped into atomic writes (4 KB by default; configurable via `--atomic-write-bytes N`), allowing safe use with parallel pipelines such as `xargs -P`.
 
 ## BUILT-IN FUNCTIONS
