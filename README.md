@@ -226,8 +226,10 @@ jrf 'sort'
 ```
 
 ### map { |x| ... }
+### map(collection) { |x| ... }
 
 Maps each element of an Array, or each entry of a Hash (yielding `[key, value]` pairs like Ruby's `Hash#map`), returning an Array.
+By default operates on the current value; pass an explicit collection to operate on a different one.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the element.
 
 If the block is a plain expression, `map` transforms each element per row.
@@ -246,11 +248,15 @@ jrf 'map { |(k, v)| sum(v) }'
 # {"a":1,"b":10}, {"a":2,"b":20} → [3,30]
 
 jrf '_["values"] >> map { |x| min(x) }'
+
+jrf 'map(_["items"]) { |x| x * 2 }'
 ```
 
 ### map_values { |v| ... }
+### map_values(collection) { |v| ... }
 
 Maps each value of a Hash and returns a Hash.
+By default operates on the current value; pass an explicit collection to operate on a different one.
 Inside the block, `_` remains the surrounding row value; use the block parameter for the value.
 
 If the block is a plain expression, `map_values` transforms each value per row.
@@ -264,8 +270,10 @@ jrf 'map_values { |v| sum(v) }'
 ```
 
 ### apply { |x| ... }
+### apply(collection) { |x| ... }
 
 Runs an expression over the current value (an Array), processing all elements within that single value.
+By default operates on the current value; pass an explicit collection to operate on a different one.
 Unlike `map` which accumulates across rows (the same position across multiple inputs), `apply` aggregates within one value (all elements of a single array), completing immediately.
 Inside the block, `_` remains the surrounding row value; use the block parameter for each element.
 
@@ -273,6 +281,9 @@ Inside the block, `_` remains the surrounding row value; use the block parameter
 # normalize values by their sum
 jrf '[_, apply { |x| sum(x) }] >> _[0].map { |x| x.to_f / _[1] }'
 # [3,7] → [0.3,0.7]
+
+# aggregate a nested array
+jrf 'map { |o| [o["name"], apply(o["scores"]) { |x| average(x) }] }'
 ```
 
 ### group_by(key_expr)

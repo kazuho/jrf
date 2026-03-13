@@ -170,22 +170,22 @@ module Jrf
       @__jrf_current_stage.step_reduce(current_input, initial: initial, &block)
     end
 
-    def map(&block)
+    def map(collection = nil, &block)
       raise ArgumentError, "map requires a block" unless block
 
-      @__jrf_current_stage.step_map(:map, current_input, &block)
+      @__jrf_current_stage.step_map(:map, collection || current_input, &block)
     end
 
-    def map_values(&block)
+    def map_values(collection = nil, &block)
       raise ArgumentError, "map_values requires a block" unless block
 
-      @__jrf_current_stage.step_map(:map_values, current_input, &block)
+      @__jrf_current_stage.step_map(:map_values, collection || current_input, &block)
     end
 
-    def apply(&block)
+    def apply(collection = nil, &block)
       raise ArgumentError, "apply requires a block" unless block
 
-      @__jrf_current_stage.step_apply(current_input, &block)
+      @__jrf_current_stage.step_apply(collection || current_input, &block)
     end
 
     def group_by(key, &block)

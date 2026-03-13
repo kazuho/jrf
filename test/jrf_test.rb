@@ -870,6 +870,21 @@ stdout, stderr, status = run_jrf('apply { |x| percentile(x, 0.5) }', '[10,20,30]
 assert_success(status, stderr, "apply with percentile")
 assert_equal(["20"], lines(stdout), "apply with percentile output")
 
+# apply with explicit collection inside map
+stdout, stderr, status = run_jrf('map { |o| [apply(o["vals"]) { |x| sum(x) }, o["name"]] }', '[{"name":"a","vals":[1,2]},{"name":"b","vals":[10,20]}]' + "\n")
+assert_success(status, stderr, "apply with explicit collection")
+assert_equal(['[[3,"a"],[30,"b"]]'], lines(stdout), "apply with explicit collection output")
+
+# map with explicit collection
+stdout, stderr, status = run_jrf('map(_["items"]) { |x| x * 2 }', '{"items":[1,2,3]}' + "\n")
+assert_success(status, stderr, "map with explicit collection")
+assert_equal(["[2,4,6]"], lines(stdout), "map with explicit collection output")
+
+# map_values with explicit collection
+stdout, stderr, status = run_jrf('map_values(_["data"]) { |v| v * 10 }', '{"data":{"a":1,"b":2}}' + "\n")
+assert_success(status, stderr, "map_values with explicit collection")
+assert_equal(['{"a":10,"b":20}'], lines(stdout), "map_values with explicit collection output")
+
 input_gb = <<~NDJSON
   {"status":200,"path":"/a","latency":10}
   {"status":404,"path":"/b","latency":50}
@@ -1002,6 +1017,18 @@ assert_equal([[1, 2]], j.call([[{"foo" => 1}, {"foo" => 2}]]), "library apply pa
 # apply - percentile
 j = Jrf.new(proc { apply { |x| percentile(x, 0.5) } })
 assert_equal([20], j.call([[10, 20, 30]]), "library apply percentile")
+
+# apply with explicit collection inside map
+j = Jrf.new(proc { map { |o| [apply(o["vals"]) { |x| sum(x) }, o["name"]] } })
+assert_equal([[[3, "a"], [30, "b"]]], j.call([[{"name" => "a", "vals" => [1, 2]}, {"name" => "b", "vals" => [10, 20]}]]), "library apply explicit collection")
+
+# map with explicit collection
+j = Jrf.new(proc { map(_["items"]) { |x| x * 2 } })
+assert_equal([[2, 4, 6]], j.call([{"items" => [1, 2, 3]}]), "library map explicit collection")
+
+# map_values with explicit collection
+j = Jrf.new(proc { map_values(_["data"]) { |v| v * 10 } })
+assert_equal([{"a" => 10, "b" => 20}], j.call([{"data" => {"a" => 1, "b" => 2}}]), "library map_values explicit collection")
 
 # group_by
 j = Jrf.new(proc { group_by(_["k"]) { count() } })
