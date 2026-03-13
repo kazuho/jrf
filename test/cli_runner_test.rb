@@ -144,7 +144,7 @@ class CliRunnerTest < JrfTestCase
     end
   end
 
-  def test_yjit_and_input_output_modes
+  def test_yjit_option
     if defined?(RubyVM::YJIT) && RubyVM::YJIT.respond_to?(:enabled?)
       yjit_probe = "{\"probe\":1}\n"
 
@@ -156,7 +156,9 @@ class CliRunnerTest < JrfTestCase
       assert_success(status, stderr, "no-jit option")
       assert_equal(%w[false], lines(stdout), "no-jit option output")
     end
+  end
 
+  def test_compressed_inputs
     Dir.mktmpdir do |dir|
       gz_path = File.join(dir, "input.ndjson.gz")
       Zlib::GzipWriter.open(gz_path) do |io|
@@ -185,7 +187,9 @@ class CliRunnerTest < JrfTestCase
       assert_success(status, stderr, "multiple compressed inputs by suffix")
       assert_equal(%w[10 20 50], lines(stdout), "multiple compressed input output")
     end
+  end
 
+  def test_output_formats
     input_hello = <<~NDJSON
       {"hello":123}
       {"hello":456}
@@ -254,14 +258,7 @@ class CliRunnerTest < JrfTestCase
     assert_equal(%w[1], lines(stdout), "no split inside block output")
   end
 
-  def test_flat_and_reducers
-    input = <<~NDJSON
-      {"foo":1,"x":5}
-      {"foo":2,"x":11}
-      {"foo":3,"x":50}
-      {"foo":4,"x":70}
-    NDJSON
-
+  def test_flat
     input_flat = <<~NDJSON
       {"items":[1,2]}
       {"items":[3]}
@@ -299,6 +296,15 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('_["foo"] >> flat', "{\"foo\":1}\n")
     assert_failure(status, "flat requires array")
     assert_includes(stderr, "flat expects Array")
+  end
+
+  def test_reducers
+    input = <<~NDJSON
+      {"foo":1,"x":5}
+      {"foo":2,"x":11}
+      {"foo":3,"x":50}
+      {"foo":4,"x":70}
+    NDJSON
 
     stdout, stderr, status = run_jrf('sum(_["foo"])', input)
     assert_success(status, stderr, "sum only")
@@ -389,7 +395,7 @@ class CliRunnerTest < JrfTestCase
     assert_equal(%w[10], lines(stdout), "min/max mixed reducers output")
   end
 
-  def test_sort_group_percentile_and_nil_handling
+  def test_sort
     input_sum = <<~NDJSON
       {"foo":1,"x":5}
       {"foo":2,"x":11}
@@ -422,7 +428,9 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> _["foo"] >> group', input_sum)
     assert_success(status, stderr, "group no matches")
     assert_equal([], lines(stdout), "group no matches output")
+  end
 
+  def test_group
     input_group_multi = <<~NDJSON
       {"x":1,"y":"a"}
       {"x":2,"y":"b"}
@@ -436,6 +444,15 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('select(_["x"] > 1000) >> {a: group(_["x"]), b: group(_["y"])}', input_group_multi)
     assert_success(status, stderr, "group in hash no matches")
     assert_equal([], lines(stdout), "group in hash no-match output")
+  end
+
+  def test_percentile
+    input_sum = <<~NDJSON
+      {"foo":1,"x":5}
+      {"foo":2,"x":11}
+      {"foo":3,"x":50}
+      {"foo":4,"x":70}
+    NDJSON
 
     stdout, stderr, status = run_jrf('percentile(_["foo"], 0.50)', input_sum)
     assert_success(status, stderr, "single percentile")
@@ -448,7 +465,9 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('percentile(_["foo"], 0.25.step(1.0, 0.25))', input_sum)
     assert_success(status, stderr, "enumerable percentile")
     assert_equal(['[1,2,3,4]'], lines(stdout), "enumerable percentile output")
+  end
 
+  def test_nil_handling_for_aggregates
     input_with_nil = <<~NDJSON
       {"foo":1}
       {"foo":null}
@@ -538,7 +557,7 @@ class CliRunnerTest < JrfTestCase
     assert_equal(%w[0], lines(stdout), "count(expr) all nil output")
   end
 
-  def test_reduce_lax_mode_and_parse_errors
+  def test_reduce
     input_multi_cols = <<~NDJSON
       {"a":1,"b":10}
       {"a":2,"b":20}
@@ -574,7 +593,9 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('sum(_["foo"]) >> select(_ > 100)', input_sum)
     assert_success(status, stderr, "post-reduce select drop")
     assert_equal([], lines(stdout), "post-reduce select drop output")
+  end
 
+  def test_lax_input_mode
     input_whitespace_stream = "{\"foo\":1} {\"foo\":2}\n\t{\"foo\":3}\n"
     stdout, stderr, status = run_jrf('_["foo"]', input_whitespace_stream)
     assert_failure(status, "default NDJSON should reject same-line multi-values")
@@ -645,7 +666,9 @@ class CliRunnerTest < JrfTestCase
       assert_success(status, stderr, "lax keeps file boundaries")
       assert_equal(%w[1 2], lines(stdout), "lax does not merge JSON across file boundaries")
     end
+  end
 
+  def test_parse_errors
     stdout, stderr, status = run_jrf('select(_["x"] > ) >> _["foo"]', "")
     assert_failure(status, "syntax error should fail before row loop")
     assert_includes(stderr, "syntax error")
@@ -670,7 +693,7 @@ class CliRunnerTest < JrfTestCase
     assert_includes(stderr, "JSON::ParserError")
   end
 
-  def test_map_map_values_apply_and_group_by
+  def test_map
     input_chain = <<~NDJSON
       {"foo":{"bar":{"z":1},"keep":true}}
       {"foo":{"bar":{"z":2},"keep":false}}
@@ -731,6 +754,20 @@ class CliRunnerTest < JrfTestCase
     assert_success(status, stderr, "map with sort default key")
     assert_equal(['[[1,2,3],[10,20,30]]'], lines(stdout), "map with sort default key output")
 
+    stdout, stderr, status = run_jrf('select(false) >> map { |x| sum(x) }', input_map)
+    assert_success(status, stderr, "map no matches")
+    assert_equal([], lines(stdout), "map no matches output")
+
+    stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 }', input_map)
+    assert_success(status, stderr, "map transform")
+    assert_equal(['[2,11,101]', '[3,21,201]', '[4,31,301]'], lines(stdout), "map transform output")
+
+    stdout, stderr, status = run_jrf('_["values"] >> map { |x| select(x >= 20) }', input_map)
+    assert_success(status, stderr, "map transform with select")
+    assert_equal(['[100]', '[20,200]', '[30,300]'], lines(stdout), "map transform with select output")
+  end
+
+  def test_map_values
     input_map_values = <<~NDJSON
       {"a":1,"b":10}
       {"a":2,"b":20}
@@ -791,10 +828,6 @@ class CliRunnerTest < JrfTestCase
     assert_success(status, stderr, "map over hash keeps ambient _")
     assert_equal(['[15,69]'], lines(stdout), "map over hash ambient _ output")
 
-    stdout, stderr, status = run_jrf('select(false) >> map { |x| sum(x) }', input_map)
-    assert_success(status, stderr, "map no matches")
-    assert_equal([], lines(stdout), "map no matches output")
-
     stdout, stderr, status = run_jrf('select(false) >> map_values { |v| sum(v) }', input_map_values)
     assert_success(status, stderr, "map_values no matches")
     assert_equal([], lines(stdout), "map_values no matches output")
@@ -803,14 +836,6 @@ class CliRunnerTest < JrfTestCase
     assert_success(status, stderr, "map_values piped to map_values passthrough")
     assert_equal(['{"a":60,"b":600}'], lines(stdout), "map_values piped output")
 
-    stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 }', input_map)
-    assert_success(status, stderr, "map transform")
-    assert_equal(['[2,11,101]', '[3,21,201]', '[4,31,301]'], lines(stdout), "map transform output")
-
-    stdout, stderr, status = run_jrf('_["values"] >> map { |x| select(x >= 20) }', input_map)
-    assert_success(status, stderr, "map transform with select")
-    assert_equal(['[100]', '[20,200]', '[30,300]'], lines(stdout), "map transform with select output")
-
     stdout, stderr, status = run_jrf('map_values { |v| v * 2 }', input_map_values)
     assert_success(status, stderr, "map_values transform")
     assert_equal(['{"a":2,"b":20}', '{"a":4,"b":40}', '{"a":6,"b":60}'], lines(stdout), "map_values transform output")
@@ -818,6 +843,14 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('map_values { |v| select(v >= 10) }', input_map_values)
     assert_success(status, stderr, "map_values transform with select")
     assert_equal(['{"b":10}', '{"b":20}', '{"b":30}'], lines(stdout), "map_values transform with select output")
+  end
+
+  def test_apply
+    input_map = <<~NDJSON
+      {"values":[1,10,100]}
+      {"values":[2,20,200]}
+      {"values":[3,30,300]}
+    NDJSON
 
     stdout, stderr, status = run_jrf('_["values"] >> map { |x| x + 1 } >> map { |x| x * 10 }', input_map)
     assert_success(status, stderr, "chained map transforms")
@@ -854,7 +887,9 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('map_values(_["data"]) { |v| v * 10 }', '{"data":{"a":1,"b":2}}' + "\n")
     assert_success(status, stderr, "map_values with explicit collection")
     assert_equal(['{"a":10,"b":20}'], lines(stdout), "map_values with explicit collection output")
+  end
 
+  def test_group_by
     input_gb = <<~NDJSON
       {"status":200,"path":"/a","latency":10}
       {"status":404,"path":"/b","latency":50}
