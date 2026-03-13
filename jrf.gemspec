@@ -16,6 +16,7 @@ Gem::Specification.new do |spec|
   spec.bindir = "exe"
   spec.executables = ["jrf"]
   spec.add_dependency "oj", ">= 3.16"
+  spec.add_development_dependency "minitest", ">= 5.0"
 
   spec.files = Dir.glob("{exe,lib,test}/*") + Dir.glob("lib/**/*") + %w[DESIGN.txt jrf.gemspec Gemfile Rakefile].select { |path| File.file?(path) }
 end
