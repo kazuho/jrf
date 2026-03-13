@@ -534,6 +534,23 @@ stdout, stderr, status = run_jrf('count(_["foo"])', input_with_nil)
 assert_success(status, stderr, "count(expr) ignores nil")
 assert_equal(%w[2], lines(stdout), "count(expr) ignores nil output")
 
+# count_if
+input_count_if = <<~NDJSON
+  {"x":1}
+  {"x":-2}
+  {"x":3}
+  {"x":-4}
+  {"x":5}
+NDJSON
+
+stdout, stderr, status = run_jrf('count_if(_["x"] > 0)', input_count_if)
+assert_success(status, stderr, "count_if")
+assert_equal(%w[3], lines(stdout), "count_if output")
+
+stdout, stderr, status = run_jrf('[count_if(_["x"] > 0), count_if(_["x"] < 0)]', input_count_if)
+assert_success(status, stderr, "count_if multiple")
+assert_equal(["[3,2]"], lines(stdout), "count_if multiple output")
+
 input_all_nil = <<~NDJSON
   {"foo":null}
   {"bar":1}

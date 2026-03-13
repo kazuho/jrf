@@ -184,6 +184,15 @@ jrf 'count()'
 jrf 'select(_["status"] == 200) >> count()'
 ```
 
+### count_if(condition)
+
+Counts rows where `condition` is truthy.
+
+```sh
+jrf 'count_if(_["status"] == 200)'
+jrf '[count_if(_["x"] > 0), count_if(_["x"] < 0)]'
+```
+
 ### percentile(expr, 0.95)
 ### percentile(expr, [0.1, 0.5, 0.9])
 ### percentile(expr, 0.1.step(0.9, 0.4))
