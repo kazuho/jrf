@@ -46,16 +46,8 @@ module Jrf
           end
         end
 
-        def finish!
-          unless @offset.zero?
-            if @offset == @buf.bytesize
-              @buf.clear
-            else
-              @buf = @buf.byteslice(@offset..)
-            end
-            @offset = 0
-          end
-          raise IOError, "truncated parallel frame from worker" unless @buf.empty?
+        def finished_cleanly?
+          @offset == @buf.bytesize
         end
 
         private
@@ -242,7 +234,7 @@ module Jrf
             if chunk == :wait_readable
               next
             elsif chunk.nil?
-              reader.finish!
+              raise IOError, "truncated parallel frame from worker" unless reader.finished_cleanly?
               read_ios.delete(io)
               io.close
               workers.delete(io)
