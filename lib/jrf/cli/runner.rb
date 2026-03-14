@@ -50,29 +50,9 @@ module Jrf
         @input_errors
       end
 
-      def run(expression, verbose: false)
+      def run(expression, parallel: nil, verbose: false)
         blocks = build_stage_blocks(expression, verbose: verbose)
-        emit_values(apply_pipeline(blocks, each_input_enum))
-      ensure
-        write_output(@output_buffer)
-      end
-
-      def run_parallel(expression, num_workers, verbose: false)
-        blocks = build_stage_blocks(expression, verbose: verbose)
-
-        # Parallelize the longest map-only prefix; reducers stay in the parent.
-        split_index = classify_parallel_stages(blocks)
-
-        if split_index.nil? || split_index == 0
-          # No map stages or all stages are reducers — run single-threaded
-          emit_values(apply_pipeline(blocks, each_input_enum))
-          return
-        end
-
-        map_blocks = blocks[0...split_index]
-        reduce_blocks = blocks[split_index..] || []
-        input_enum = parallel_map_enum(map_blocks, num_workers)
-        emit_values(reduce_blocks.empty? ? input_enum : apply_pipeline(reduce_blocks, input_enum))
+        emit_values(processed_values(blocks, parallel: parallel))
       ensure
         write_output(@output_buffer)
       end
@@ -97,6 +77,23 @@ module Jrf
 
       def each_input_enum
         Enumerator.new { |y| each_input_value { |v| y << v } }
+      end
+
+      def processed_values(blocks, parallel:)
+        return apply_pipeline(blocks, each_input_enum) unless parallel_enabled?(parallel)
+
+        # Parallelize the longest map-only prefix; reducers stay in the parent.
+        split_index = classify_parallel_stages(blocks)
+        return apply_pipeline(blocks, each_input_enum) if split_index.nil? || split_index == 0
+
+        map_blocks = blocks[0...split_index]
+        reduce_blocks = blocks[split_index..] || []
+        input_enum = parallel_map_enum(map_blocks, parallel)
+        reduce_blocks.empty? ? input_enum : apply_pipeline(reduce_blocks, input_enum)
+      end
+
+      def parallel_enabled?(parallel)
+        parallel && parallel > 1 && @file_paths.length > 1
       end
 
       def classify_parallel_stages(blocks)

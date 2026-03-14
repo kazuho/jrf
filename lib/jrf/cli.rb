@@ -18,7 +18,7 @@ module Jrf
         --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
         -o, --output FORMAT
                        output format: json (default), pretty, tsv
-        -P N           parallelize map stages across N workers (requires file arguments)
+        -P N           opportunistically parallelize the map-prefix across N workers
         -r, --require LIBRARY
                        require LIBRARY before evaluating stages
         --no-jit       do not enable YJIT, even when supported by the Ruby runtime
@@ -56,7 +56,7 @@ module Jrf
           opts.on("-v", "--verbose", "print parsed stage expressions") { verbose = true }
           opts.on("--lax", "allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)") { lax = true }
           opts.on("-o", "--output FORMAT", %w[json pretty tsv], "output format: json, pretty, tsv") { |fmt| output_format = fmt.to_sym }
-          opts.on("-P N", Integer, "parallelize map stages across N workers") { |n| parallel = n }
+          opts.on("-P N", Integer, "opportunistically parallelize the map-prefix across N workers") { |n| parallel = n }
           opts.on("-r", "--require LIBRARY", "require LIBRARY before evaluating stages") { |library| required_libraries << library }
           opts.on("--no-jit", "do not enable YJIT, even when supported by the Ruby runtime") { jit = false }
           opts.on("--atomic-write-bytes N", Integer, "group short outputs into atomic writes of up to N bytes") do |value|
@@ -103,11 +103,7 @@ module Jrf
         atomic_write_bytes: atomic_write_bytes
       )
 
-      if parallel && parallel > 1 && file_paths.length > 1
-        runner.run_parallel(expression, parallel, verbose: verbose)
-      else
-        runner.run(expression, verbose: verbose)
-      end
+      runner.run(expression, parallel: parallel, verbose: verbose)
 
       exit 1 if runner.input_errors?
     end
