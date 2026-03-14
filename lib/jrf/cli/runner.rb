@@ -11,7 +11,6 @@ module Jrf
       RS_CHAR = "\x1e"
       DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
       PARALLEL_FRAME_HEADER_BYTES = 4
-      PARALLEL_FRAME_COMPACT_THRESHOLD = 4096
 
       class RsNormalizer
         def initialize(input)
@@ -55,15 +54,14 @@ module Jrf
         private
 
         def next_payload
-          return nil if @buf.bytesize - @offset < PARALLEL_FRAME_HEADER_BYTES
+          return compact_and_yield_nil if @buf.bytesize - @offset < PARALLEL_FRAME_HEADER_BYTES
 
           payload_len = @buf.byteslice(@offset, PARALLEL_FRAME_HEADER_BYTES).unpack1("N")
           frame_len = PARALLEL_FRAME_HEADER_BYTES + payload_len
-          return nil if @buf.bytesize - @offset < frame_len
+          return compact_and_yield_nil if @buf.bytesize - @offset < frame_len
 
           payload = @buf.byteslice(@offset + PARALLEL_FRAME_HEADER_BYTES, payload_len)
           @offset += frame_len
-          compact!
           payload
         end
 
@@ -73,10 +71,15 @@ module Jrf
           if @offset == @buf.bytesize
             @buf.clear
             @offset = 0
-          elsif @offset >= PARALLEL_FRAME_COMPACT_THRESHOLD && @offset >= @buf.bytesize / 2
+          else
             @buf = @buf.byteslice(@offset..)
             @offset = 0
           end
+        end
+
+        def compact_and_yield_nil
+          compact!
+          nil
         end
       end
 
