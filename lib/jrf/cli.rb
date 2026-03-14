@@ -93,29 +93,10 @@ module Jrf
       required_libraries.each { |library| require library }
 
       file_paths = argv.dup
-      inputs = Enumerator.new do |y|
-        if file_paths.empty?
-          y << input
-        else
-          file_paths.each do |path|
-            if path == "-"
-              y << input
-            elsif path.end_with?(".gz")
-              require "zlib"
-              Zlib::GzipReader.open(path) do |source|
-                y << source
-              end
-            else
-              File.open(path, "rb") do |source|
-                y << source
-              end
-            end
-          end
-        end
-      end
 
       runner = Runner.new(
-        inputs: inputs,
+        file_paths: file_paths,
+        stdin: input,
         out: out,
         err: err,
         lax: lax,
@@ -123,10 +104,15 @@ module Jrf
         atomic_write_bytes: atomic_write_bytes
       )
 
-      if parallel && parallel > 1 && file_paths.length > 1
-        runner.run_parallel(expression, file_paths, parallel, verbose: verbose)
-      else
-        runner.run(expression, verbose: verbose)
+      begin
+        if parallel && parallel > 1 && file_paths.length > 1
+          runner.run_parallel(expression, file_paths, parallel, verbose: verbose)
+        else
+          runner.run(expression, verbose: verbose)
+        end
+      rescue Runner::InputError => e
+        err.puts e.message
+        exit 1
       end
     end
 

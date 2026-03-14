@@ -105,7 +105,7 @@ class CliParallelTest < JrfTestCase
 
       stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", '_["x"]', good_path, bad_gz_path)
       assert_failure(status, "worker error causes non-zero exit")
-      refute_empty(stderr, "worker error reported to stderr")
+      assert_includes(stderr, bad_gz_path, "error message includes filename")
       # Good file data should still be present
       output_values = lines(stdout).map(&:to_i)
       assert_includes(output_values, 1, "good file data preserved")
@@ -132,6 +132,20 @@ class CliParallelTest < JrfTestCase
       stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", 'select(_["x"] > 10) >> sum(_["x"])', *ndjson_files(dir))
       assert_success(status, stderr, "parallel select then sum")
       assert_equal(%w[60], lines(stdout), "parallel select then sum output")
+    end
+  end
+
+  def test_serial_error_includes_filename
+    Dir.mktmpdir do |dir|
+      bad_gz_path = File.join(dir, "bad.ndjson.gz")
+      full_gz = StringIO.new
+      Zlib::GzipWriter.wrap(full_gz) { |io| io.write("{\"x\":10}\n" * 100) }
+      File.binwrite(bad_gz_path, full_gz.string[0, full_gz.string.bytesize / 2])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", '_["x"]', bad_gz_path)
+      assert_failure(status, "serial error causes non-zero exit")
+      assert_includes(stderr, bad_gz_path, "serial error message includes filename")
+      refute_includes(stderr, "from ", "serial error does not include stacktrace")
     end
   end
 

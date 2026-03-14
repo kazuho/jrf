@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "zlib"
 require_relative "../pipeline"
 require_relative "../pipeline_parser"
 
@@ -9,6 +10,12 @@ module Jrf
     class Runner
       RS_CHAR = "\x1e"
       DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
+
+      class InputError < StandardError
+        def initialize(path, cause)
+          super("#{path}: #{cause.message} (#{cause.class})")
+        end
+      end
 
       class RsNormalizer
         def initialize(input)
@@ -28,7 +35,9 @@ module Jrf
         end
       end
 
-      def initialize(inputs:, out: $stdout, err: $stderr, lax: false, output_format: :json, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
+      def initialize(file_paths: [], stdin: $stdin, inputs: nil, out: $stdout, err: $stderr, lax: false, output_format: :json, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
+        @file_paths = file_paths
+        @stdin = stdin
         @inputs = inputs
         @out = out
         @err = err
@@ -159,7 +168,6 @@ module Jrf
 
       def open_file(path)
         if path.end_with?(".gz")
-          require "zlib"
           Zlib::GzipReader.open(path) { |source| yield source }
         else
           File.open(path, "rb") { |source| yield source }
@@ -180,7 +188,7 @@ module Jrf
           begin
             pipeline.call(input_enum) { |value| emit_output(value) }
           rescue => e
-            @err.puts "#{e.message} (#{e.class})"
+            @err.puts "#{path}: #{e.message} (#{e.class})"
             worker_failed = true
           end
           write_output(@output_buffer)
@@ -338,7 +346,23 @@ module Jrf
       end
 
       def each_input
-        @inputs.each { |source| yield source }
+        if @inputs
+          @inputs.each { |source| yield source }
+        elsif @file_paths.empty?
+          yield @stdin
+        else
+          @file_paths.each do |path|
+            if path == "-"
+              yield @stdin
+            else
+              begin
+                open_file(path) { |source| yield source }
+              rescue IOError, SystemCallError, Zlib::GzipFile::Error => e
+                raise InputError.new(path, e)
+              end
+            end
+          end
+        end
       end
 
       def emit_output(value)
