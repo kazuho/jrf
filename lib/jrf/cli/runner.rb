@@ -10,6 +10,8 @@ module Jrf
     class Runner
       RS_CHAR = "\x1e"
       DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
+      PARALLEL_FRAME_HEADER_BYTES = 4
+      PARALLEL_FRAME_COMPACT_THRESHOLD = 4096
 
       class RsNormalizer
         def initialize(input)
@@ -25,6 +27,55 @@ module Jrf
             outbuf.replace(chunk)
           else
             chunk
+          end
+        end
+      end
+
+      class ParallelFrameReader
+        def initialize
+          @buf = +""
+          @offset = 0
+        end
+
+        def append(chunk)
+          @buf << chunk
+        end
+
+        def each_payload
+          while (payload = next_payload)
+            yield payload
+          end
+        end
+
+        def finish!
+          compact!
+          raise IOError, "truncated parallel frame from worker" unless @buf.empty?
+        end
+
+        private
+
+        def next_payload
+          return nil if @buf.bytesize - @offset < PARALLEL_FRAME_HEADER_BYTES
+
+          payload_len = @buf.byteslice(@offset, PARALLEL_FRAME_HEADER_BYTES).unpack1("N")
+          frame_len = PARALLEL_FRAME_HEADER_BYTES + payload_len
+          return nil if @buf.bytesize - @offset < frame_len
+
+          payload = @buf.byteslice(@offset + PARALLEL_FRAME_HEADER_BYTES, payload_len)
+          @offset += frame_len
+          compact!
+          payload
+        end
+
+        def compact!
+          return if @offset.zero?
+
+          if @offset == @buf.bytesize
+            @buf.clear
+            @offset = 0
+          elsif @offset >= PARALLEL_FRAME_COMPACT_THRESHOLD && @offset >= @buf.bytesize / 2
+            @buf = @buf.byteslice(@offset..)
+            @offset = 0
           end
         end
       end
@@ -52,7 +103,7 @@ module Jrf
 
       def run(expression, parallel: nil, verbose: false)
         blocks = build_stage_blocks(expression, verbose: verbose)
-        emit_values(processed_values(blocks, parallel: parallel))
+        emit_values(processed_values(blocks, parallel: parallel, verbose: verbose))
       ensure
         write_output(@output_buffer)
       end
@@ -79,21 +130,32 @@ module Jrf
         Enumerator.new { |y| each_input_value { |v| y << v } }
       end
 
-      def processed_values(blocks, parallel:)
-        return apply_pipeline(blocks, each_input_enum) unless parallel_enabled?(parallel)
+      def processed_values(blocks, parallel:, verbose:)
+        unless parallel_enabled?(parallel)
+          dump_parallel_status("disabled", verbose: verbose)
+          return apply_pipeline(blocks, each_input_enum)
+        end
 
         # Parallelize the longest map-only prefix; reducers stay in the parent.
         split_index = classify_parallel_stages(blocks)
-        return apply_pipeline(blocks, each_input_enum) if split_index.nil? || split_index == 0
+        if split_index.nil? || split_index == 0
+          dump_parallel_status("disabled", verbose: verbose)
+          return apply_pipeline(blocks, each_input_enum)
+        end
 
         map_blocks = blocks[0...split_index]
         reduce_blocks = blocks[split_index..] || []
+        dump_parallel_status("enabled workers=#{parallel} files=#{@file_paths.length} split=#{split_index}/#{blocks.length}", verbose: verbose)
         input_enum = parallel_map_enum(map_blocks, parallel)
         reduce_blocks.empty? ? input_enum : apply_pipeline(reduce_blocks, input_enum)
       end
 
       def parallel_enabled?(parallel)
         parallel && parallel > 1 && @file_paths.length > 1
+      end
+
+      def dump_parallel_status(status, verbose:)
+        @err.puts "parallel: #{status}" if verbose
       end
 
       def classify_parallel_stages(blocks)
@@ -161,14 +223,13 @@ module Jrf
           read_io.close
           @out = write_io
           @output_buffer = +""
-          @output_format = :json
           pipeline = Pipeline.new(*blocks)
           input_enum = Enumerator.new do |y|
             open_file(path) { |source| each_parallel_source_value(source) { |v| y << v } }
           end
           worker_failed = false
           begin
-            pipeline.call(input_enum) { |value| emit_output(value) }
+            pipeline.call(input_enum) { |value| emit_parallel_frame(value) }
           rescue => e
             @err.puts "#{path}: #{e.message} (#{e.class})"
             worker_failed = true
@@ -178,18 +239,18 @@ module Jrf
           exit!(worker_failed ? 1 : 0)
         end
         write_io.close
-        [read_io, +(+""), pid]
+        [read_io, pid]
       end
 
       def run_parallel_worker_pool(blocks, num_workers)
         file_queue = @file_paths.dup
-        workers = {} # read_io => [buf, pid]
+        workers = {} # read_io => [reader, pid]
         children = []
 
         # Fill initial pool
         while workers.size < num_workers && !file_queue.empty?
-          read_io, buf, pid = spawn_parallel_worker(blocks, file_queue.shift)
-          workers[read_io] = [buf, pid]
+          read_io, pid = spawn_parallel_worker(blocks, file_queue.shift)
+          workers[read_io] = [ParallelFrameReader.new, pid]
           children << pid
         end
 
@@ -198,32 +259,27 @@ module Jrf
         until read_ios.empty?
           ready = IO.select(read_ios)
           ready[0].each do |io|
-            buf = workers[io][0]
+            reader = workers[io][0]
             chunk = io.read_nonblock(65536, exception: false)
             if chunk == :wait_readable
               next
             elsif chunk.nil?
-              # EOF — process any trailing data
-              unless buf.empty?
-                buf.each_line { |line| yield line.strip unless line.strip.empty? }
-              end
+              reader.finish!
               read_ios.delete(io)
               io.close
               workers.delete(io)
 
               # Spawn next worker if files remain
               unless file_queue.empty?
-                read_io, new_buf, pid = spawn_parallel_worker(blocks, file_queue.shift)
-                workers[read_io] = [new_buf, pid]
+                read_io, pid = spawn_parallel_worker(blocks, file_queue.shift)
+                workers[read_io] = [ParallelFrameReader.new, pid]
                 children << pid
                 read_ios << read_io
               end
             else
-              buf << chunk
-              # yield complete lines, keep trailing partial line in buffer
-              while (nl = buf.index("\n"))
-                line = buf.slice!(0, nl + 1).strip
-                yield line unless line.empty?
+              reader.append(chunk)
+              reader.each_payload do |payload|
+                yield JSON.parse(payload)
               end
             end
           end
@@ -235,7 +291,7 @@ module Jrf
       def parallel_map_enum(map_blocks, num_workers)
         children = nil
         Enumerator.new do |y|
-          children = run_parallel_worker_pool(map_blocks, num_workers) { |line| y << JSON.parse(line) }
+          children = run_parallel_worker_pool(map_blocks, num_workers) { |value| y << value }
         ensure
           wait_for_parallel_children(children) if children
         end
@@ -280,6 +336,11 @@ module Jrf
         else
           input_enum.each { |value| emit_output(value) }
         end
+      end
+
+      def emit_parallel_frame(value)
+        payload = JSON.generate(value)
+        buffer_output([payload.bytesize].pack("N") << payload)
       end
 
       def each_input_value

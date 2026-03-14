@@ -8,9 +8,10 @@ class CliParallelTest < JrfTestCase
       write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
       write_ndjson(dir, "b.ndjson", [{"x" => 3}, {"x" => 4}])
 
-      stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", '_["x"]', *ndjson_files(dir))
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", '_["x"]', *ndjson_files(dir))
       assert_success(status, stderr, "parallel map only")
       assert_equal([1, 2, 3, 4], lines(stdout).map(&:to_i).sort, "parallel map only output")
+      assert_includes(stderr, "parallel: enabled workers=2 files=2 split=1/1", "parallel verbose summary")
     end
   end
 
@@ -76,9 +77,10 @@ class CliParallelTest < JrfTestCase
       write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
       write_ndjson(dir, "b.ndjson", [{"x" => 3}])
 
-      stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", 'sum(_["x"])', *ndjson_files(dir))
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sum(_["x"])', *ndjson_files(dir))
       assert_success(status, stderr, "all-reducer serial fallback")
       assert_equal(%w[6], lines(stdout), "all-reducer serial fallback output")
+      assert_includes(stderr, "parallel: disabled", "parallel disabled summary")
     end
   end
 
