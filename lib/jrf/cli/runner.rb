@@ -166,45 +166,47 @@ module Jrf
         end
       end
 
-      def spawn_workers(blocks, file_paths, num_workers)
-        pipes = []
+      def spawn_worker(blocks, path)
+        read_io, write_io = IO.pipe
+        pid = fork do
+          read_io.close
+          @out = write_io
+          @output_buffer = +""
+          pipeline = Pipeline.new(*blocks)
+          input_enum = Enumerator.new do |y|
+            open_file(path) { |source| each_source_values(source) { |v| y << v } }
+          end
+          begin
+            pipeline.call(input_enum) { |value| emit_output(value) }
+          rescue => e
+            @err.puts "#{e.message} (#{e.class})"
+          end
+          write_output(@output_buffer)
+          write_io.close
+          exit!(0)
+        end
+        write_io.close
+        [read_io, +(+""), pid]
+      end
+
+      def run_worker_pool(blocks, file_paths, num_workers)
+        file_queue = file_paths.dup
+        workers = {} # read_io => [buf, pid]
         children = []
 
-        file_paths.each_slice((file_paths.length.to_f / num_workers).ceil) do |paths|
-          read_io, write_io = IO.pipe
-          pid = fork do
-            read_io.close
-            pipes.each { |r, _| r.close } # close other workers' read ends
-            @out = write_io
-            @output_buffer = +""
-            pipeline = Pipeline.new(*blocks)
-            input_enum = Enumerator.new do |y|
-              paths.each { |path| open_file(path) { |source| each_source_values(source) { |v| y << v } } }
-            end
-            begin
-              pipeline.call(input_enum) { |value| emit_output(value) }
-            rescue => e
-              @err.puts "#{e.message} (#{e.class})"
-            end
-            write_output(@output_buffer)
-            write_io.close
-            exit!(0)
-          end
-          write_io.close
-          pipes << [read_io, +("")]
+        # Fill initial pool
+        while workers.size < num_workers && !file_queue.empty?
+          read_io, buf, pid = spawn_worker(blocks, file_queue.shift)
+          workers[read_io] = [buf, pid]
           children << pid
         end
 
-        [pipes, children]
-      end
-
-      def read_workers_output(pipes)
-        read_ios = pipes.map(&:first)
+        read_ios = workers.keys.dup
 
         until read_ios.empty?
           ready = IO.select(read_ios)
           ready[0].each do |io|
-            buf = pipes.find { |r, _| r == io }[1]
+            buf = workers[io][0]
             chunk = io.read_nonblock(65536, exception: false)
             if chunk == :wait_readable
               next
@@ -215,6 +217,15 @@ module Jrf
               end
               read_ios.delete(io)
               io.close
+              workers.delete(io)
+
+              # Spawn next worker if files remain
+              unless file_queue.empty?
+                read_io, new_buf, pid = spawn_worker(blocks, file_queue.shift)
+                workers[read_io] = [new_buf, pid]
+                children << pid
+                read_ios << read_io
+              end
             else
               buf << chunk
               # yield complete lines, keep trailing partial line in buffer
@@ -225,22 +236,22 @@ module Jrf
             end
           end
         end
+
+        children
       end
 
       def run_parallel_map_only(blocks, file_paths, num_workers)
-        pipes, children = spawn_workers(blocks, file_paths, num_workers)
-        read_workers_output(pipes) do |line|
+        children = run_worker_pool(blocks, file_paths, num_workers) do |line|
           emit_output(JSON.parse(line))
         end
         wait_for_children(children)
       end
 
       def run_parallel_map_reduce(map_blocks, reduce_blocks, file_paths, num_workers)
-        pipes, children = spawn_workers(map_blocks, file_paths, num_workers)
-
         reduce_pipeline = Pipeline.new(*reduce_blocks)
+        children = nil
         input_enum = Enumerator.new do |y|
-          read_workers_output(pipes) { |line| y << JSON.parse(line) }
+          children = run_worker_pool(map_blocks, file_paths, num_workers) { |line| y << JSON.parse(line) }
         end
         run_pipeline(reduce_pipeline, input_enum)
 
