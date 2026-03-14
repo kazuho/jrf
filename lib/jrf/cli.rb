@@ -18,6 +18,7 @@ module Jrf
         --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
         -o, --output FORMAT
                        output format: json (default), pretty, tsv
+        -P N           parallelize map stages across N workers (requires file arguments)
         -r, --require LIBRARY
                        require LIBRARY before evaluating stages
         --no-jit       do not enable YJIT, even when supported by the Ruby runtime
@@ -45,6 +46,7 @@ module Jrf
       verbose = false
       lax = false
       output_format = :json
+      parallel = nil
       jit = true
       required_libraries = []
       atomic_write_bytes = Runner::DEFAULT_OUTPUT_BUFFER_LIMIT
@@ -54,6 +56,7 @@ module Jrf
           opts.on("-v", "--verbose", "print parsed stage expressions") { verbose = true }
           opts.on("--lax", "allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)") { lax = true }
           opts.on("-o", "--output FORMAT", %w[json pretty tsv], "output format: json, pretty, tsv") { |fmt| output_format = fmt.to_sym }
+          opts.on("-P N", Integer, "parallelize map stages across N workers") { |n| parallel = n }
           opts.on("-r", "--require LIBRARY", "require LIBRARY before evaluating stages") { |library| required_libraries << library }
           opts.on("--no-jit", "do not enable YJIT, even when supported by the Ruby runtime") { jit = false }
           opts.on("--atomic-write-bytes N", Integer, "group short outputs into atomic writes of up to N bytes") do |value|
@@ -89,11 +92,12 @@ module Jrf
       enable_yjit if jit
       required_libraries.each { |library| require library }
 
+      file_paths = argv.dup
       inputs = Enumerator.new do |y|
-        if argv.empty?
+        if file_paths.empty?
           y << input
         else
-          argv.each do |path|
+          file_paths.each do |path|
             if path == "-"
               y << input
             elsif path.end_with?(".gz")
@@ -109,14 +113,21 @@ module Jrf
           end
         end
       end
-      Runner.new(
+
+      runner = Runner.new(
         inputs: inputs,
         out: out,
         err: err,
         lax: lax,
         output_format: output_format,
         atomic_write_bytes: atomic_write_bytes
-      ).run(expression, verbose: verbose)
+      )
+
+      if parallel && parallel > 1 && file_paths.length > 1
+        runner.run_parallel(expression, file_paths, parallel, verbose: verbose)
+      else
+        runner.run(expression, verbose: verbose)
+      end
     end
 
     def self.enable_yjit

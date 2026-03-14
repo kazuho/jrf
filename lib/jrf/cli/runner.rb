@@ -61,7 +61,222 @@ module Jrf
         write_output(@output_buffer)
       end
 
+      def run_parallel(expression, file_paths, num_workers, verbose: false)
+        parsed = PipelineParser.new(expression).parse
+        stages = parsed[:stages]
+        dump_stages(stages) if verbose
+
+        blocks = stages.map { |stage|
+          eval("proc { #{stage[:src]} }", nil, "(jrf stage)", 1) # rubocop:disable Security/Eval
+        }
+
+        # Classify stages by feeding the first row from the first file
+        split_index = classify_stages(blocks, file_paths)
+
+        if split_index.nil? || split_index == 0
+          # No map stages or all stages are reducers — run single-threaded
+          pipeline = Pipeline.new(*blocks)
+          input_enum = Enumerator.new { |y| each_input_value { |v| y << v } }
+          run_pipeline(pipeline, input_enum)
+          return
+        end
+
+        if split_index >= blocks.length
+          # All stages are map stages — workers write directly to output
+          run_parallel_map_only(blocks, file_paths, num_workers)
+        else
+          # Split: workers run map stages, parent runs reducer stages
+          map_blocks = blocks[0...split_index]
+          reduce_blocks = blocks[split_index..]
+          run_parallel_map_reduce(map_blocks, reduce_blocks, file_paths, num_workers)
+        end
+      ensure
+        write_output(@output_buffer)
+      end
+
       private
+
+      def run_pipeline(pipeline, input_enum)
+        if @output_format == :tsv
+          values = []
+          pipeline.call(input_enum) { |value| values << value }
+          emit_tsv(values)
+        else
+          pipeline.call(input_enum) { |value| emit_output(value) }
+        end
+      end
+
+      def classify_stages(blocks, file_paths)
+        # Read the first row from the first file to probe stage modes
+        first_value = read_first_value(file_paths.first)
+        return nil if first_value.nil?
+
+        # Run the value through each stage independently to classify
+        split_index = nil
+        blocks.each_with_index do |block, i|
+          probe_pipeline = Pipeline.new(block)
+          probe_pipeline.call([first_value]) { |_| }
+          stage = probe_pipeline.instance_variable_get(:@stages).first
+          if stage.instance_variable_get(:@mode) == :reducer
+            split_index = i
+            break
+          end
+        end
+
+        split_index || blocks.length
+      end
+
+      def read_first_value(path)
+        open_file(path) do |source|
+          if @lax
+            require "oj"
+            result = nil
+            handler = Class.new(Oj::ScHandler) do
+              define_method(:initialize) { |&emit| @emit = emit }
+              def hash_start = {}
+              def hash_key(key) = key
+              def hash_set(hash, key, value) = hash[key] = value
+              def array_start = []
+              def array_append(array, value) = array << value
+              def add_value(value) = @emit.call(value)
+            end
+            begin
+              Oj.sc_parse(handler.new { |v| result = v; raise StopIteration }, RsNormalizer.new(source))
+            rescue StopIteration
+              # got our first value
+            end
+            result
+          else
+            source.each_line do |raw_line|
+              line = raw_line.strip
+              next if line.empty?
+              return JSON.parse(line)
+            end
+            nil
+          end
+        end
+      end
+
+      def open_file(path)
+        if path.end_with?(".gz")
+          require "zlib"
+          Zlib::GzipReader.open(path) { |source| yield source }
+        else
+          File.open(path, "rb") { |source| yield source }
+        end
+      end
+
+      def spawn_workers(blocks, file_paths, num_workers)
+        pipes = []
+        children = []
+
+        file_paths.each_slice((file_paths.length.to_f / num_workers).ceil) do |paths|
+          read_io, write_io = IO.pipe
+          pid = fork do
+            read_io.close
+            pipes.each { |r, _| r.close } # close other workers' read ends
+            @out = write_io
+            @output_buffer = +""
+            pipeline = Pipeline.new(*blocks)
+            input_enum = Enumerator.new do |y|
+              paths.each { |path| open_file(path) { |source| each_source_values(source) { |v| y << v } } }
+            end
+            begin
+              pipeline.call(input_enum) { |value| emit_output(value) }
+            rescue => e
+              @err.puts "#{e.message} (#{e.class})"
+            end
+            write_output(@output_buffer)
+            write_io.close
+            exit!(0)
+          end
+          write_io.close
+          pipes << [read_io, +("")]
+          children << pid
+        end
+
+        [pipes, children]
+      end
+
+      def read_workers_output(pipes)
+        read_ios = pipes.map(&:first)
+
+        until read_ios.empty?
+          ready = IO.select(read_ios)
+          ready[0].each do |io|
+            buf = pipes.find { |r, _| r == io }[1]
+            chunk = io.read_nonblock(65536, exception: false)
+            if chunk == :wait_readable
+              next
+            elsif chunk.nil?
+              # EOF — process any trailing data
+              unless buf.empty?
+                buf.each_line { |line| yield line.strip unless line.strip.empty? }
+              end
+              read_ios.delete(io)
+              io.close
+            else
+              buf << chunk
+              # yield complete lines, keep trailing partial line in buffer
+              while (nl = buf.index("\n"))
+                line = buf.slice!(0, nl + 1).strip
+                yield line unless line.empty?
+              end
+            end
+          end
+        end
+      end
+
+      def run_parallel_map_only(blocks, file_paths, num_workers)
+        pipes, children = spawn_workers(blocks, file_paths, num_workers)
+        read_workers_output(pipes) do |line|
+          emit_output(JSON.parse(line))
+        end
+        wait_for_children(children)
+      end
+
+      def run_parallel_map_reduce(map_blocks, reduce_blocks, file_paths, num_workers)
+        pipes, children = spawn_workers(map_blocks, file_paths, num_workers)
+
+        reduce_pipeline = Pipeline.new(*reduce_blocks)
+        input_enum = Enumerator.new do |y|
+          read_workers_output(pipes) { |line| y << JSON.parse(line) }
+        end
+        run_pipeline(reduce_pipeline, input_enum)
+
+        wait_for_children(children)
+      end
+
+      def each_source_values(source)
+        if @lax
+          require "oj"
+          handler = Class.new(Oj::ScHandler) do
+            define_method(:initialize) { |&emit| @emit = emit }
+            def hash_start = {}
+            def hash_key(key) = key
+            def hash_set(hash, key, value) = hash[key] = value
+            def array_start = []
+            def array_append(array, value) = array << value
+            def add_value(value) = @emit.call(value)
+          end
+          Oj.sc_parse(handler.new { |value| yield value }, RsNormalizer.new(source))
+        else
+          source.each_line do |raw_line|
+            line = raw_line.strip
+            next if line.empty?
+            yield JSON.parse(line)
+          end
+        end
+      end
+
+      def wait_for_children(children)
+        children.each do |pid|
+          _, status = Process.waitpid2(pid)
+          unless status.success?
+            raise "worker #{pid} exited with status #{status.exitstatus}"
+          end
+        end
+      end
 
       def each_input_value
         return each_input_value_lax { |value| yield value } if @lax
@@ -171,7 +386,13 @@ module Jrf
       end
 
       def write_output(str)
-        @out.syswrite(str)
+        return if str.empty?
+
+        total = 0
+        while total < str.bytesize
+          written = @out.syswrite(str.byteslice(total..))
+          total += written
+        end
       end
     end
   end
