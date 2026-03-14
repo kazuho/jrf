@@ -21,7 +21,7 @@ module Jrf
           chunk = @input.read(length)
           return nil if chunk.nil?
 
-          chunk = chunk.tr(RS_CHAR, "\n")
+          chunk.tr!(RS_CHAR, "\n")
           if outbuf
             outbuf.replace(chunk)
           else
@@ -72,7 +72,7 @@ module Jrf
 
         def compact!
           if @offset > 0
-            @buf = @buf.byteslice(@offset..) || +""
+            @buf.slice!(0, @offset)
             @offset = 0
           end
         end
@@ -291,8 +291,8 @@ module Jrf
       def each_stream_value(stream)
         return each_stream_value_lax(stream) { |value| yield value } if @lax
 
-        stream.each_line do |raw_line|
-          line = raw_line.strip
+        stream.each_line do |line|
+          line.strip!
           next if line.empty?
           yield JSON.parse(line)
         end
