@@ -105,10 +105,14 @@ module Jrf
         blocks = build_stage_blocks(expression, verbose: verbose)
         if @output_format == :tsv
           values = []
-          process_values(blocks, parallel: parallel, verbose: verbose) { |value| values << value }
+          process_values(blocks, parallel: parallel, verbose: verbose) do |value|
+            values << value
+          end
           emit_tsv(values)
         else
-          process_values(blocks, parallel: parallel, verbose: verbose) { |value| emit_output(value) }
+          process_values(blocks, parallel: parallel, verbose: verbose) do |value|
+            emit_output(value)
+          end
         end
       ensure
         write_output(@output_buffer)
@@ -184,14 +188,6 @@ module Jrf
         end
 
         split_index || blocks.length
-      end
-
-      def open_file(path)
-        if path.end_with?(".gz")
-          Zlib::GzipReader.open(path) { |source| yield source }
-        else
-          File.open(path, "rb") { |source| yield source }
-        end
       end
 
       def spawn_parallel_worker(blocks, path)
@@ -301,6 +297,14 @@ module Jrf
           line = raw_line.strip
           next if line.empty?
           yield JSON.parse(line)
+        end
+      end
+
+      def open_file(path)
+        if path.end_with?(".gz")
+          Zlib::GzipReader.open(path) { |source| yield source }
+        else
+          File.open(path, "rb") { |source| yield source }
         end
       end
 
