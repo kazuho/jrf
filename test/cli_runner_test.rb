@@ -106,18 +106,18 @@ class CliRunnerTest < JrfTestCase
 
   def test_runner_buffering_and_require_option
     threshold_input = StringIO.new((1..4).map { |i| "{\"foo\":\"#{'x' * 1020}\",\"i\":#{i}}\n" }.join)
-    buffered_runner = RecordingRunner.new(stdin: threshold_input, out: StringIO.new, err: StringIO.new)
+    buffered_runner = RecordingRunner.new(input: threshold_input, out: StringIO.new, err: StringIO.new)
     buffered_runner.run('_')
     expected_line = JSON.generate({"foo" => "x" * 1020, "i" => 1}) + "\n"
     assert_equal(2, buffered_runner.writes.length, "default atomic write limit buffers records until the configured threshold")
     assert_equal(expected_line.bytesize * 3, buffered_runner.writes.first.bytesize, "default atomic write limit flushes before the next record would exceed the threshold")
     assert_equal(expected_line.bytesize, buffered_runner.writes.last.bytesize, "final buffer flush emits the remaining record")
 
-    small_limit_runner = RecordingRunner.new(stdin: StringIO.new("{\"foo\":1}\n{\"foo\":2}\n"), out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
+    small_limit_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":2}\n"), out: StringIO.new, err: StringIO.new, atomic_write_bytes: 1)
     small_limit_runner.run('_["foo"]')
     assert_equal(["1\n", "2\n"], small_limit_runner.writes, "small atomic write limit emits oversized records directly")
 
-    error_runner = RecordingRunner.new(stdin: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: StringIO.new)
+    error_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: StringIO.new)
     begin
       error_runner.run('_["foo"]')
       flunk("expected parse error for buffered flush test")
@@ -648,7 +648,7 @@ class CliRunnerTest < JrfTestCase
     assert_equal(%w[9], lines(stdout), "lax trailing separator output")
 
     chunked_lax_out = RecordingRunner.new(
-      stdin: ChunkedSource.new("{\"foo\":1}\n\x1e{\"foo\":2}\n\t{\"foo\":3}\n"),
+      input: ChunkedSource.new("{\"foo\":1}\n\x1e{\"foo\":2}\n\t{\"foo\":3}\n"),
       out: StringIO.new,
       err: StringIO.new,
       lax: true

@@ -30,9 +30,14 @@ module Jrf
         end
       end
 
-      def initialize(file_paths: [], stdin: $stdin, out: $stdout, err: $stderr, lax: false, output_format: :json, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
-        @file_paths = file_paths
-        @stdin = stdin
+      def initialize(input: $stdin, out: $stdout, err: $stderr, lax: false, output_format: :json, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
+        if input.is_a?(Array)
+          @file_paths = input
+          @stdin = nil
+        else
+          @file_paths = []
+          @stdin = input
+        end
         @out = out
         @err = err
         @lax = lax

@@ -95,8 +95,7 @@ module Jrf
       file_paths = argv.dup
 
       runner = Runner.new(
-        file_paths: file_paths,
-        stdin: input,
+        input: file_paths.empty? ? input : file_paths,
         out: out,
         err: err,
         lax: lax,
