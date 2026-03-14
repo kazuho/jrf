@@ -359,7 +359,7 @@ module Jrf
             else
               begin
                 open_file(path) { |source| yield source }
-              rescue IOError, SystemCallError, Zlib::GzipFile::Error => e
+              rescue IOError, SystemCallError, Zlib::GzipFile::Error, JSON::ParserError => e
                 @err.puts "#{path}: #{e.message} (#{e.class})"
                 @input_errors = true
               end
