@@ -176,14 +176,16 @@ module Jrf
           input_enum = Enumerator.new do |y|
             open_file(path) { |source| each_source_values(source) { |v| y << v } }
           end
+          worker_failed = false
           begin
             pipeline.call(input_enum) { |value| emit_output(value) }
           rescue => e
             @err.puts "#{e.message} (#{e.class})"
+            worker_failed = true
           end
           write_output(@output_buffer)
           write_io.close
-          exit!(0)
+          exit!(worker_failed ? 1 : 0)
         end
         write_io.close
         [read_io, +(+""), pid]
@@ -281,12 +283,12 @@ module Jrf
       end
 
       def wait_for_children(children)
+        failed = false
         children.each do |pid|
           _, status = Process.waitpid2(pid)
-          unless status.success?
-            raise "worker #{pid} exited with status #{status.exitstatus}"
-          end
+          failed = true unless status.success?
         end
+        exit(1) if failed
       end
 
       def each_input_value

@@ -104,7 +104,7 @@ class CliParallelTest < JrfTestCase
       File.binwrite(bad_gz_path, full_gz.string[0, full_gz.string.bytesize / 2])
 
       stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", '_["x"]', good_path, bad_gz_path)
-      assert_success(status, stderr, "worker error handling")
+      assert_failure(status, "worker error causes non-zero exit")
       refute_empty(stderr, "worker error reported to stderr")
       # Good file data should still be present
       output_values = lines(stdout).map(&:to_i)
