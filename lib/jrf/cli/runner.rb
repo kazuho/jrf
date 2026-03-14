@@ -30,10 +30,9 @@ module Jrf
         end
       end
 
-      def initialize(file_paths: [], stdin: $stdin, inputs: nil, out: $stdout, err: $stderr, lax: false, output_format: :json, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
+      def initialize(file_paths: [], stdin: $stdin, out: $stdout, err: $stderr, lax: false, output_format: :json, atomic_write_bytes: DEFAULT_OUTPUT_BUFFER_LIMIT)
         @file_paths = file_paths
         @stdin = stdin
-        @inputs = inputs
         @out = out
         @err = err
         @lax = lax
@@ -346,9 +345,7 @@ module Jrf
       end
 
       def each_input
-        if @inputs
-          @inputs.each { |source| yield source }
-        elsif @file_paths.empty?
+        if @file_paths.empty?
           yield @stdin
         else
           @file_paths.each do |path|
