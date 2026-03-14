@@ -180,7 +180,7 @@ module Jrf
 
       def read_parallel_probe_value(path)
         open_file(path) do |source|
-          first_source_value(source)
+          first_stream_value(source)
         end
       end
 
@@ -200,7 +200,7 @@ module Jrf
           @output_buffer = +""
           pipeline = Pipeline.new(*blocks)
           input_enum = Enumerator.new do |y|
-            open_file(path) { |source| each_source_value(source) { |v| y << v } }
+            open_file(path) { |stream| each_stream_value(stream) { |v| y << v } }
           end
           worker_failed = false
           begin
@@ -298,32 +298,32 @@ module Jrf
 
       def each_input_value
         each_input do |source|
-          each_source_value(source) { |value| yield value }
+          each_stream_value(source) { |value| yield value }
         end
       end
 
-      def each_source_value(source)
-        return each_source_value_lax(source) { |value| yield value } if @lax
+      def each_stream_value(stream)
+        return each_stream_value_lax(stream) { |value| yield value } if @lax
 
-        source.each_line do |raw_line|
+        stream.each_line do |raw_line|
           line = raw_line.strip
           next if line.empty?
           yield JSON.parse(line)
         end
       end
 
-      def each_source_value_lax(source)
+      def each_stream_value_lax(stream)
         require "oj"
-        Oj.sc_parse(streaming_json_handler_class.new { |value| yield value }, RsNormalizer.new(source))
+        Oj.sc_parse(streaming_json_handler_class.new { |value| yield value }, RsNormalizer.new(stream))
       rescue LoadError
         raise "oj is required for --lax mode (gem install oj)"
       rescue Oj::ParseError => e
         raise JSON::ParserError, e.message
       end
 
-      def first_source_value(source)
+      def first_stream_value(stream)
         result = nil
-        each_source_value(source) do |value|
+        each_stream_value(stream) do |value|
           result = value
           break
         end
