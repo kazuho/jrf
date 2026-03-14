@@ -54,26 +54,27 @@ module Jrf
 
         def next_payload
           if @buf.bytesize - @offset < PARALLEL_FRAME_HEADER_BYTES
-            if @offset > 0
-              @buf = @buf.byteslice(@offset..) || +""
-              @offset = 0
-            end
+            compact!
             return nil
           end
 
           payload_len = @buf.byteslice(@offset, PARALLEL_FRAME_HEADER_BYTES).unpack1("N")
           frame_len = PARALLEL_FRAME_HEADER_BYTES + payload_len
           if @buf.bytesize - @offset < frame_len
-            if @offset > 0
-              @buf = @buf.byteslice(@offset..) || +""
-              @offset = 0
-            end
+            compact!
             return nil
           end
 
           payload = @buf.byteslice(@offset + PARALLEL_FRAME_HEADER_BYTES, payload_len)
           @offset += frame_len
           payload
+        end
+
+        def compact!
+          if @offset > 0
+            @buf = @buf.byteslice(@offset..) || +""
+            @offset = 0
+          end
         end
       end
 
