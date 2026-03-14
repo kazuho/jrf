@@ -152,7 +152,7 @@ module Jrf
         end
 
         map_blocks = blocks[0...split_index]
-        reduce_blocks = blocks[split_index..] || []
+        reduce_blocks = blocks[split_index..]
         dump_parallel_status("enabled workers=#{parallel} files=#{@file_paths.length} split=#{split_index}/#{blocks.length}", verbose: verbose)
         input_enum = parallel_map_enum(map_blocks, parallel)
         (reduce_blocks.empty? ? input_enum : apply_pipeline(reduce_blocks, input_enum)).each(&block)
