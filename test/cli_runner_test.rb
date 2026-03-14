@@ -117,13 +117,12 @@ class CliRunnerTest < JrfTestCase
     small_limit_runner.run('_["foo"]')
     assert_equal(["1\n", "2\n"], small_limit_runner.writes, "small atomic write limit emits oversized records directly")
 
-    error_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: StringIO.new)
-    begin
-      error_runner.run('_["foo"]')
-      flunk("expected parse error for buffered flush test")
-    rescue JSON::ParserError
-      assert_equal(["1\n"], error_runner.writes, "buffer flushes pending output before parse errors escape")
-    end
+    err_io = StringIO.new
+    error_runner = RecordingRunner.new(input: StringIO.new("{\"foo\":1}\n{\"foo\":"), out: StringIO.new, err: err_io)
+    error_runner.run('_["foo"]')
+    assert_equal(["1\n"], error_runner.writes, "buffer flushes pending output before parse errors")
+    assert_includes(err_io.string, "JSON::ParserError", "parse error reported to stderr")
+    assert(error_runner.input_errors?, "input_errors? is true after parse error")
 
     input_hello = <<~NDJSON
       {"hello":123}
@@ -691,6 +690,7 @@ class CliRunnerTest < JrfTestCase
     assert_failure(status, "broken input should fail")
     assert_equal(%w[3], lines(stdout), "reducers flush before parse error")
     assert_includes(stderr, "JSON::ParserError")
+    refute_includes(stderr, "from ", "no stacktrace for parse errors")
   end
 
   def test_map

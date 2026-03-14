@@ -349,23 +349,25 @@ module Jrf
         end
       end
 
-      def each_input
+      def each_input(&block)
         if @file_paths.empty?
-          yield @stdin
+          with_error_handling("<stdin>") { block.call(@stdin) }
         else
           @file_paths.each do |path|
             if path == "-"
-              yield @stdin
+              with_error_handling("<stdin>") { block.call(@stdin) }
             else
-              begin
-                open_file(path) { |source| yield source }
-              rescue IOError, SystemCallError, Zlib::GzipFile::Error, JSON::ParserError => e
-                @err.puts "#{path}: #{e.message} (#{e.class})"
-                @input_errors = true
-              end
+              with_error_handling(path) { open_file(path, &block) }
             end
           end
         end
+      end
+
+      def with_error_handling(name)
+        yield
+      rescue IOError, SystemCallError, Zlib::GzipFile::Error, JSON::ParserError => e
+        @err.puts "#{name}: #{e.message} (#{e.class})"
+        @input_errors = true
       end
 
       def emit_output(value)
