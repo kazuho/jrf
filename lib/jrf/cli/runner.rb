@@ -184,6 +184,7 @@ module Jrf
           read_io.close
           @out = write_io
           @output_buffer = +""
+          @output_format = :json
           pipeline = Pipeline.new(*blocks)
           input_enum = Enumerator.new do |y|
             open_file(path) { |source| each_source_values(source) { |v| y << v } }
@@ -255,8 +256,12 @@ module Jrf
       end
 
       def run_parallel_map_only(blocks, file_paths, num_workers)
-        children = run_worker_pool(blocks, file_paths, num_workers) do |line|
-          emit_output(JSON.parse(line))
+        values = []
+        children = run_worker_pool(blocks, file_paths, num_workers) { |line| values << JSON.parse(line) }
+        if @output_format == :tsv
+          emit_tsv(values)
+        else
+          values.each { |value| emit_output(value) }
         end
         wait_for_children(children)
       end

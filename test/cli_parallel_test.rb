@@ -14,6 +14,28 @@ class CliParallelTest < JrfTestCase
     end
   end
 
+  def test_parallel_map_only_pretty_output
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 2}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", "-o", "pretty", '_["x"]', *ndjson_files(dir))
+      assert_success(status, stderr, "parallel pretty map only")
+      assert_equal(["1", "2"], stdout.lines.map(&:strip).reject(&:empty?).sort, "parallel pretty map only output")
+    end
+  end
+
+  def test_parallel_map_only_tsv_output
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"a" => 1, "b" => 2}])
+      write_ndjson(dir, "b.ndjson", [{"a" => 3, "b" => 4}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", "-o", "tsv", "_", *ndjson_files(dir))
+      assert_success(status, stderr, "parallel tsv map only")
+      assert_equal(["a\t1", "a\t3", "b\t2", "b\t4"], lines(stdout).sort, "parallel tsv map only output")
+    end
+  end
+
   def test_parallel_map_reduce
     Dir.mktmpdir do |dir|
       write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
