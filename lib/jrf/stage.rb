@@ -51,13 +51,17 @@ module Jrf
       (@mode == :reducer) ? Control::DROPPED : result
     end
 
-    def step_reduce(value, initial:, finish: nil, step_fn: nil, &step_block)
+    def step_reduce(value, initial:, finish: nil, merge: nil, step_fn: nil, &step_block)
       idx = @cursor
       step_fn ||= step_block
 
       if @reducers[idx].nil?
         finish_rows = finish || ->(acc) { [acc] }
-        @reducers[idx] = Reducers.reduce(initial, finish: finish_rows, &step_fn)
+        @reducers[idx] = if merge
+          Reducers.decomposable_reduce(initial, merge: merge, finish: finish_rows, &step_fn)
+        else
+          Reducers.reduce(initial, finish: finish_rows, &step_fn)
+        end
         result = ReducerToken.new(idx)
       else
         result = Control::DROPPED
@@ -164,6 +168,32 @@ module Jrf
         @reducers.fetch(@template.index).finish
       else
         [self.class.resolve_template(@template, @reducers)]
+      end
+    end
+
+    # Returns true if all reducers in this stage are DecomposableReduce instances,
+    # meaning partial accumulators from parallel workers can be merged.
+    def decomposable?
+      @mode == :reducer && @reducers.any? &&
+        @reducers.all? { |r| r.is_a?(Reducers::DecomposableReduce) }
+    end
+
+    # Returns an array of raw accumulator values, one per reducer.
+    def partial_accumulators
+      @reducers.map(&:partial)
+    end
+
+    # Replaces all reducer accumulators with the given values.
+    def replace_accumulators!(partials)
+      @reducers.each_with_index do |reducer, i|
+        reducer.instance_variable_set(:@acc, partials[i])
+      end
+    end
+
+    # Merges an array of partial accumulators (from another worker) into this stage's reducers.
+    def merge_partials!(other_partials)
+      @reducers.each_with_index do |reducer, i|
+        reducer.merge_partial(other_partials[i])
       end
     end
 
