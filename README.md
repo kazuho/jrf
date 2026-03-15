@@ -77,7 +77,7 @@ jrf --require ./my_helpers.rb 'my_method(_)'
 
 Ruby is also fast and memory-efficient: jrf’s core logic and user-supplied expressions are optimized together by the same [JIT](https://docs.ruby-lang.org/en/3.4/yjit/yjit_md.html), strings are copied only when necessary, and Ruby comes with a [heavily optimized JSON parser](https://byroot.github.io/ruby/json/2024/12/15/optimizing-ruby-json-part-1.html).
 
-For example[^note]:
+For example, calculating `min` over a large NDJSON file is 3x faster than jq[^note]:
 
 ```sh
 % jq -n 'reduce inputs as $x (null; ($x.tid) as $t | if . == null or $t < . then $t else . end)' < large.ldjson
