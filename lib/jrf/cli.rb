@@ -18,7 +18,7 @@ module Jrf
         --lax          allow multiline JSON texts; split inputs by whitespace (also detects JSON-SEQ RS 0x1e)
         -o, --output FORMAT
                        output format: json (default), pretty, tsv
-        -P N           opportunistically parallelize the map-prefix across N workers
+        -P N           opportunistically parallelize across N workers
         -r, --require LIBRARY
                        require LIBRARY before evaluating stages
         --no-jit       do not enable YJIT, even when supported by the Ruby runtime

@@ -99,7 +99,7 @@ Give it a try — install via RubyGems: `gem install jrf`
   - `pretty` — pretty-prints each output JSON value.
   - `tsv` — tab-separated values. Hashes become rows keyed by their keys; arrays of arrays become rows directly. Scalar and null cells are printed as-is; nested arrays and objects are rendered as compact JSON. Useful for pasting into spreadsheets or piping through `column -t`.
   - Short outputs are grouped into atomic writes (4 KB by default; configurable via `--atomic-write-bytes N`), allowing safe use with parallel pipelines such as `xargs -P`.
-- `-P N` opportunistically parallelizes compatible pipelines across `N` worker processes when multiple input files are provided. If the pipeline contains reducers, only the prefix before the first reducer is parallelized; the remainder runs in the parent process. If parallelization does not apply cleanly, execution falls back to single-process. Processing order is not guaranteed under `-P`, so order-sensitive reducers may produce different results than serial execution.
+- `-P N` opportunistically parallelizes compatible pipelines across `N` worker processes when multiple input files are provided. `jrf` looks for the first aggregation stage and executes all stages upfront in parallel. The first aggregation stage is also parallelized when it has a known shape (e.g., `sum`). If parallelization does not apply cleanly, execution falls back to single-process. Processing order is not guaranteed under `-P`, so order-sensitive reducers may produce different results than serial execution.
 
 ## BUILT-IN FUNCTIONS
 
