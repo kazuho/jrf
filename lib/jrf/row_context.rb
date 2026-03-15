@@ -49,12 +49,14 @@ module Jrf
     end
 
     define_reducer(:sum) do |_ctx, value, initial: 0, block: nil|
-      {
-        value: value, initial: 0,
-        step: ->(acc, v) { v.nil? ? acc : (acc + v) },
-        finish: initial.zero? ? nil : ->(acc) { [acc + initial] },
-        merge: ->(a, b) { a + b }
-      }
+      if initial == 0
+        # Default identity — decomposable for parallel reduction
+        { value: value, initial: 0, step: ->(acc, v) { v.nil? ? acc : (acc + v) }, merge: ->(a, b) { a + b } }
+      else
+        # Custom initial (e.g. sum(_, initial: 100) or non-numeric monoids) —
+        # bias is applied as the starting accumulator; not decomposable.
+        { value: value, initial: initial, step: ->(acc, v) { v.nil? ? acc : (acc + v) } }
+      end
     end
 
     define_reducer(:count) do |_ctx, value = MISSING, block: nil|

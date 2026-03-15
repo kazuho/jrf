@@ -203,15 +203,26 @@ class CliParallelTest < JrfTestCase
     end
   end
 
-  def test_parallel_decomposable_sum_with_initial
+  def test_parallel_sum_with_initial_falls_back
     Dir.mktmpdir do |dir|
       write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
       write_ndjson(dir, "b.ndjson", [{"x" => 3}])
 
+      # sum with custom initial is not decomposable (non-default identity)
       stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sum(_["x"], initial: 100)', *ndjson_files(dir))
-      assert_success(status, stderr, "parallel sum with initial")
-      assert_includes(stderr, "decompose=", "sum with initial decomposed")
-      assert_equal(%w[106], lines(stdout), "parallel sum with initial output")
+      assert_success(status, stderr, "sum with initial")
+      assert_includes(stderr, "parallel: disabled", "sum with custom initial falls back to serial")
+      assert_equal(%w[106], lines(stdout), "sum with initial output")
+    end
+  end
+
+  def test_sum_with_string_initial
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => "hello "}, {"x" => "world"}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", 'sum(_["x"], initial: "")', *ndjson_files(dir))
+      assert_success(status, stderr, "sum with string initial")
+      assert_equal(['"hello world"'], lines(stdout), "sum with string initial output")
     end
   end
 
