@@ -17,6 +17,7 @@ module Jrf
             spec.fetch(:value),
             initial: reducer_initial_value(spec.fetch(:initial)),
             finish: spec[:finish],
+            merge: spec[:merge],
             &spec.fetch(:step)
           )
         end
@@ -48,27 +49,35 @@ module Jrf
     end
 
     define_reducer(:sum) do |_ctx, value, initial: 0, block: nil|
-      { value: value, initial: initial, step: ->(acc, v) { v.nil? ? acc : (acc + v) } }
+      {
+        value: value, initial: 0,
+        step: ->(acc, v) { v.nil? ? acc : (acc + v) },
+        finish: initial.zero? ? nil : ->(acc) { [acc + initial] },
+        merge: ->(a, b) { a + b }
+      }
     end
 
     define_reducer(:count) do |_ctx, value = MISSING, block: nil|
+      merge = ->(a, b) { a + b }
       if value.equal?(MISSING)
-        { value: nil, initial: 0, step: ->(acc, _v) { acc + 1 } }
+        { value: nil, initial: 0, step: ->(acc, _v) { acc + 1 }, merge: merge }
       else
-        { value: value, initial: 0, step: ->(acc, v) { v.nil? ? acc : (acc + 1) } }
+        { value: value, initial: 0, step: ->(acc, v) { v.nil? ? acc : (acc + 1) }, merge: merge }
       end
     end
 
     define_reducer(:count_if) do |_ctx, condition, block: nil|
-      { value: condition, initial: 0, step: ->(acc, v) { v ? (acc + 1) : acc } }
+      { value: condition, initial: 0, step: ->(acc, v) { v ? (acc + 1) : acc }, merge: ->(a, b) { a + b } }
     end
 
     define_reducer(:min) do |_ctx, value, block: nil|
-      { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v < acc ? v : acc) } }
+      min_merge = ->(a, b) { a.nil? ? b : b.nil? ? a : (a < b ? a : b) }
+      { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v < acc ? v : acc) }, merge: min_merge }
     end
 
     define_reducer(:max) do |_ctx, value, block: nil|
-      { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v > acc ? v : acc) } }
+      max_merge = ->(a, b) { a.nil? ? b : b.nil? ? a : (a > b ? a : b) }
+      { value: value, initial: nil, step: ->(acc, v) { v.nil? ? acc : (acc.nil? || v > acc ? v : acc) }, merge: max_merge }
     end
 
     define_reducer(:average) do |_ctx, value, block: nil|
@@ -82,7 +91,8 @@ module Jrf
           acc[0] += v
           acc[1] += 1
           acc
-        }
+        },
+        merge: ->(a, b) { [a[0] + b[0], a[1] + b[1]] }
       }
     end
 
@@ -136,7 +146,7 @@ module Jrf
 
     define_reducer(:group) do |ctx, value = MISSING, block: nil|
       resolved_value = value.equal?(MISSING) ? ctx.send(:current_input) : value
-      { value: resolved_value, initial: -> { [] }, step: ->(acc, v) { acc << v } }
+      { value: resolved_value, initial: -> { [] }, step: ->(acc, v) { acc << v }, merge: ->(a, b) { a + b } }
     end
 
     define_reducer(:percentile) do |ctx, value, percentage, block: nil|

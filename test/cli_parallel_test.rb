@@ -72,15 +72,16 @@ class CliParallelTest < JrfTestCase
     end
   end
 
-  def test_parallel_all_reducers_falls_back_to_serial
+  def test_parallel_decomposable_reducer
     Dir.mktmpdir do |dir|
       write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
       write_ndjson(dir, "b.ndjson", [{"x" => 3}])
 
       stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sum(_["x"])', *ndjson_files(dir))
-      assert_success(status, stderr, "all-reducer serial fallback")
-      assert_equal(%w[6], lines(stdout), "all-reducer serial fallback output")
-      assert_includes(stderr, "parallel: disabled", "parallel disabled summary")
+      assert_success(status, stderr, "parallel decomposable reducer")
+      assert_equal(%w[6], lines(stdout), "parallel decomposable reducer output")
+      assert_includes(stderr, "parallel: enabled", "parallel enabled for decomposable reducer")
+      assert_includes(stderr, "decompose=", "decompose mode indicated")
     end
   end
 
@@ -156,6 +157,156 @@ class CliParallelTest < JrfTestCase
       stdout, stderr, status = Open3.capture3("./exe/jrf", "-P", "2", 'select(_["x"] > 10) >> sum(_["x"])', *ndjson_files(dir))
       assert_success(status, stderr, "parallel select then sum")
       assert_equal(%w[60], lines(stdout), "parallel select then sum output")
+    end
+  end
+
+  def test_parallel_decomposable_multi_reducer
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 3}, {"x" => 4}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", '{s: sum(_["x"]), n: count(), mn: min(_["x"]), mx: max(_["x"])}', *ndjson_files(dir))
+      assert_success(status, stderr, "parallel multi reducer")
+      assert_includes(stderr, "decompose=", "multi reducer decomposed")
+      result = JSON.parse(lines(stdout).first)
+      assert_equal(10, result["s"], "sum")
+      assert_equal(4, result["n"], "count")
+      assert_equal(1, result["mn"], "min")
+      assert_equal(4, result["mx"], "max")
+    end
+  end
+
+  def test_parallel_decomposable_average
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 10}, {"x" => 20}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 30}, {"x" => 40}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'average(_["x"])', *ndjson_files(dir))
+      assert_success(status, stderr, "parallel average")
+      assert_includes(stderr, "decompose=", "average decomposed")
+      assert_equal(["25.0"], lines(stdout), "parallel average output")
+    end
+  end
+
+  def test_parallel_decomposable_group
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 3}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'group(_["x"])', *ndjson_files(dir))
+      assert_success(status, stderr, "parallel group")
+      assert_includes(stderr, "decompose=", "group decomposed")
+      result = JSON.parse(lines(stdout).first)
+      assert_equal([1, 2, 3], result.sort, "parallel group output")
+    end
+  end
+
+  def test_parallel_decomposable_sum_with_initial
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 3}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sum(_["x"], initial: 100)', *ndjson_files(dir))
+      assert_success(status, stderr, "parallel sum with initial")
+      assert_includes(stderr, "decompose=", "sum with initial decomposed")
+      assert_equal(%w[106], lines(stdout), "parallel sum with initial output")
+    end
+  end
+
+  def test_parallel_decomposable_reducer_then_passthrough
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 3}, {"x" => 4}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sum(_["x"]) >> _ * 2', *ndjson_files(dir))
+      assert_success(status, stderr, "parallel decomposable then passthrough")
+      assert_includes(stderr, "decompose=", "reducer then passthrough decomposed")
+      assert_equal(%w[20], lines(stdout), "parallel decomposable then passthrough output")
+    end
+  end
+
+  def test_parallel_mixed_decomposable_reducers
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 10}, {"x" => 20}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 30}, {"x" => 40}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", '[sum(_["x"]), average(_["x"]), min(_["x"]), max(_["x"]), count()]', *ndjson_files(dir))
+      assert_success(status, stderr, "mixed decomposable")
+      assert_includes(stderr, "decompose=", "mixed decomposable used decompose")
+      result = JSON.parse(lines(stdout).first)
+      assert_equal([100, 25.0, 10, 40, 4], result, "mixed decomposable output")
+    end
+  end
+
+  def test_parallel_mixed_decomposable_and_non_decomposable_falls_back
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 10}, {"x" => 20}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 30}, {"x" => 40}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", '[sum(_["x"]), percentile(_["x"], 0.5)]', *ndjson_files(dir))
+      assert_success(status, stderr, "mixed with non-decomposable")
+      assert_includes(stderr, "parallel: disabled", "mixed with non-decomposable falls back to serial")
+      result = JSON.parse(lines(stdout).first)
+      assert_equal([100, 20], result, "mixed with non-decomposable output")
+    end
+  end
+
+  def test_parallel_decomposable_with_empty_file
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
+      File.write(File.join(dir, "b.ndjson"), "")
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", '{s: sum(_["x"]), n: count(), mn: min(_["x"])}', *ndjson_files(dir))
+      assert_success(status, stderr, "decomposable with empty file")
+      assert_includes(stderr, "decompose=", "decomposable with empty file used decompose")
+      result = JSON.parse(lines(stdout).first)
+      assert_equal(3, result["s"], "sum ignores empty file")
+      assert_equal(2, result["n"], "count ignores empty file")
+      assert_equal(1, result["mn"], "min ignores empty file")
+    end
+  end
+
+  def test_parallel_decomposable_all_files_empty
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "a.ndjson"), "")
+      File.write(File.join(dir, "b.ndjson"), "")
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sum(_["x"])', *ndjson_files(dir))
+      assert_success(status, stderr, "all files empty")
+      # All files empty means first_value is nil, so classify returns nil → serial fallback
+      assert_includes(stderr, "parallel: disabled", "all files empty falls back to serial")
+      assert_equal([], lines(stdout), "no output for empty input")
+    end
+  end
+
+  def test_parallel_non_decomposable_falls_back_to_serial
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", [{"x" => 1}, {"x" => 2}])
+      write_ndjson(dir, "b.ndjson", [{"x" => 3}])
+
+      stdout, stderr, status = Open3.capture3("./exe/jrf", "-v", "-P", "2", 'sort(_["x"]) >> _["x"]', *ndjson_files(dir))
+      assert_success(status, stderr, "non-decomposable serial fallback")
+      assert_equal([1, 2, 3], lines(stdout).map { |l| JSON.parse(l) }, "sort output")
+      assert_includes(stderr, "parallel: disabled", "non-decomposable falls back to serial")
+    end
+  end
+
+  def test_parallel_decomposable_matches_serial
+    Dir.mktmpdir do |dir|
+      write_ndjson(dir, "a.ndjson", (1..50).map { |i| {"v" => i} })
+      write_ndjson(dir, "b.ndjson", (51..100).map { |i| {"v" => i} })
+
+      files = ndjson_files(dir)
+      expr = '{s: sum(_["v"]), n: count(), mn: min(_["v"]), mx: max(_["v"]), avg: average(_["v"])}'
+
+      serial_stdout, serial_stderr, serial_status = Open3.capture3("./exe/jrf", expr, *files)
+      assert_success(serial_status, serial_stderr, "serial baseline")
+
+      parallel_stdout, parallel_stderr, parallel_status = Open3.capture3("./exe/jrf", "-v", "-P", "2", expr, *files)
+      assert_success(parallel_status, parallel_stderr, "parallel run")
+      assert_includes(parallel_stderr, "decompose=", "decomposable matches serial used decompose")
+
+      assert_equal(JSON.parse(serial_stdout), JSON.parse(parallel_stdout), "parallel decomposable matches serial")
     end
   end
 
