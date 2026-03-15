@@ -5,7 +5,7 @@
 ```sh
 # jrf reads files (or STDIN) and emits NDJSON or pretty-prints JSON values
 jrf 'STAGE >> STAGE >> STAGE ...' < file.ndjson
-jrf 'STAGE >> STAGE >> STAGE ...' file1.ndjson file2.ndjson.gz
+jrf --parallel 8 'STAGE >> STAGE >> STAGE ...' *.ndjson.gz
 jrf --lax 'STAGE >> STAGE >> STAGE ...' < multiline.json
 jrf --lax 'STAGE >> STAGE >> STAGE ...' < file.jsonseq
 jrf -o pretty '_' file.json file.ndjson
