@@ -113,6 +113,38 @@ class LibraryApiTest < JrfTestCase
     assert_equal([], j.call([]), "library empty input")
   end
 
+  def test_read_from_files
+    Dir.mktmpdir do |dir|
+      plain = File.join(dir, "a.ndjson")
+      File.write(plain, %({"a":1}\n{"a":2}\n\n{"a":3}\n))
+
+      j = Jrf.new(proc { _["a"] })
+      assert_equal([1, 2, 3], j.read(plain), "library read NDJSON returns array")
+
+      streamed = []
+      result = j.read(plain) { |v| streamed << v }
+      assert_nil(result, "library read with block returns nil")
+      assert_equal([1, 2, 3], streamed, "library read with block streams values")
+
+      reducer = Jrf.new(proc { sum(_["a"]) })
+      assert_equal([6], reducer.read(plain), "library read drives reducers to completion")
+
+      second = File.join(dir, "b.ndjson")
+      File.write(second, %({"a":10}\n{"a":20}\n))
+      assert_equal([1, 2, 3, 10, 20], j.read(plain, second), "library read concatenates multiple paths")
+
+      gz_path = File.join(dir, "c.ndjson.gz")
+      Zlib::GzipWriter.open(gz_path) { |gz| gz.write(%({"a":100}\n{"a":200}\n)) }
+      assert_equal([100, 200], j.read(gz_path), "library read auto-decompresses .gz")
+
+      lax_path = File.join(dir, "d.json")
+      File.write(lax_path, %({"a":1}\n{\n  "a": 2\n}\n))
+      assert_equal([1, 2], j.read(lax_path, lax: true), "library read supports lax multiline mode")
+
+      assert_raises(ArgumentError) { j.read }
+    end
+  end
+
   def test_stage_reduce_control_tokens
     stage = Jrf::Stage.new(proc { })
     first_token = stage.step_reduce(1, initial: 0) { |acc, v| acc + v }

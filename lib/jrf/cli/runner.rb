@@ -1,34 +1,15 @@
 # frozen_string_literal: true
 
 require "json"
-require "zlib"
+require_relative "../input_reader"
 require_relative "../pipeline"
 require_relative "../pipeline_parser"
 
 module Jrf
   class CLI
     class Runner
-      RS_CHAR = "\x1e"
       DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
       PARALLEL_FRAME_HEADER_BYTES = 4
-
-      class RsNormalizer
-        def initialize(input)
-          @input = input
-        end
-
-        def read(length = nil, outbuf = nil)
-          chunk = @input.read(length)
-          return nil if chunk.nil?
-
-          chunk.tr!(RS_CHAR, "\n")
-          if outbuf
-            outbuf.replace(chunk)
-          else
-            chunk
-          end
-        end
-      end
 
       class ParallelFrameReader
         def initialize
@@ -353,46 +334,12 @@ module Jrf
         end
       end
 
-      def each_stream_value(stream)
-        return each_stream_value_lax(stream) { |value| yield value } if @lax
-
-        stream.each_line do |line|
-          line.strip!
-          next if line.empty?
-          yield JSON.parse(line)
-        end
+      def each_stream_value(stream, &block)
+        InputReader.each_value(stream, lax: @lax, &block)
       end
 
-      def open_file(path)
-        if path.end_with?(".gz")
-          Zlib::GzipReader.open(path) { |source| yield source }
-        else
-          File.open(path, "rb") { |source| yield source }
-        end
-      end
-
-      def each_stream_value_lax(stream)
-        require "oj"
-        Oj.sc_parse(streaming_json_handler_class.new { |value| yield value }, RsNormalizer.new(stream))
-      rescue LoadError
-        raise "oj is required for --lax mode (gem install oj)"
-      rescue Oj::ParseError => e
-        raise JSON::ParserError, e.message
-      end
-
-      def streaming_json_handler_class
-        @streaming_json_handler_class ||= Class.new(Oj::ScHandler) do
-          def initialize(&emit)
-            @emit = emit
-          end
-
-          def hash_start = {}
-          def hash_key(key) = key
-          def hash_set(hash, key, value) = hash[key] = value
-          def array_start = []
-          def array_append(array, value) = array << value
-          def add_value(value) = @emit.call(value)
-        end
+      def open_file(path, &block)
+        InputReader.open_path(path, &block)
       end
 
       def dump_stages(stages)
