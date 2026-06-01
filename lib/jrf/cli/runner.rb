@@ -11,10 +11,6 @@ module Jrf
       DEFAULT_OUTPUT_BUFFER_LIMIT = 4096
       PARALLEL_FRAME_HEADER_BYTES = 4
 
-      # Re-exported so existing test helpers (ChunkedSource etc.) can keep using
-      # CLI::Runner::RsNormalizer without caring that the implementation moved.
-      RsNormalizer = InputReader::RsNormalizer
-
       class ParallelFrameReader
         def initialize
           @buf = +""
