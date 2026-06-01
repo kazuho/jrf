@@ -420,6 +420,28 @@ j = Jrf.new(proc { _["id"] })
 j.call(input_array) { |value| puts value }
 ```
 
+`Jrf#read` runs the pipeline directly against one or more files, mirroring how the CLI consumes its file arguments. Paths ending in `.gz` are auto-decompressed; pass `lax: true` for multiline / JSON-SEQ input.
+
+```ruby
+Jrf.new(proc { _["a"] }).read("a.ndjson")                # => [1, 2, 3]
+Jrf.new(proc { sum(_["a"]) }).read("a.ndjson.gz")        # => [6]
+Jrf.new(proc { _ }).read("a.ndjson", "b.ndjson")         # concatenates files
+Jrf.new(proc { _ }).read("a.json", lax: true)            # multiline JSON
+```
+
+This is most useful inside a CLI expression that needs to build a lookup hash from a separate file (a streaming hash-join), since `--require`d helpers and the inline expression itself can both call `Jrf.new(...).read(...)`:
+
+```sh
+# Filter h3s_ttlb events to those whose connection's late-acked count is 0,
+# by building a {[tid, conn] => late-acked} lookup from the same file.
+jrf '$lookup ||= Jrf.new(
+       proc { select(_["type"] == "conn_stats") },
+       proc { reduce({}) { |a, v| a[[v["tid"], v["conn"]]] = v["num-packets.late-acked"]; a } }
+     ).read("log.ndjson").first
+     select(_["type"] == "h3s_ttlb" && $lookup[[_["tid"], _["conn_id"]]] == 0)' \
+   log.ndjson
+```
+
 ## LICENSE
 
 MIT

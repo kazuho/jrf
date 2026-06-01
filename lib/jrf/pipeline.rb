@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "control"
+require_relative "input_reader"
 require_relative "row_context"
 require_relative "stage"
 
@@ -10,6 +11,34 @@ module Jrf
       raise ArgumentError, "at least one stage block is required" if blocks.empty?
 
       @stages = blocks.map { |block| Stage.new(block, src: nil) }
+    end
+
+    # Run the pipeline on one or more files, mirroring how the CLI reads its
+    # file arguments: each path is opened (with .gz auto-decompression) and
+    # parsed as NDJSON. Pass +lax: true+ for multiline JSON / JSON-SEQ input.
+    #
+    # Without a block, returns an Array of output values; with a block, streams
+    # each output value to the block.
+    #
+    # @param paths [Array<String>] one or more file paths
+    # @param lax [Boolean] enable lax (multiline / whitespace-delimited) parsing
+    # @yieldparam value output value
+    # @return [Array, nil] output values (without block), or nil (with block)
+    # @example Build a lookup hash from one file, use it to filter another
+    #   lookup = Jrf.new(
+    #     proc { reduce({}) { |a, v| a[[v["tid"], v["conn"]]] = v["late_acked"]; a } }
+    #   ).read("conn_stats.ndjson").first
+    def read(*paths, lax: false, &on_output)
+      raise ArgumentError, "at least one path is required" if paths.empty?
+
+      input = Enumerator.new do |y|
+        paths.each do |path|
+          InputReader.open_path(path) do |stream|
+            InputReader.each_value(stream, lax: lax) { |value| y << value }
+          end
+        end
+      end
+      call(input, &on_output)
     end
 
     # Run the pipeline on an enumerable of input values.
