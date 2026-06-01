@@ -7,6 +7,15 @@ require_relative "version"
 
 module Jrf
   class CLI
+    class << self
+      # The list of input file paths given on the command line, in argv order.
+      # Empty when reading from stdin (no path arguments). Set before any work
+      # begins, so it is copy-on-write inherited by -P worker processes; an
+      # expression can re-read these files (e.g. for a streaming hash-join)
+      # via Jrf.new(...).read(*Jrf::CLI.files).
+      attr_reader :files
+    end
+
     USAGE = "usage: jrf [options] 'STAGE >> STAGE >> ...'"
     HELP_TEXT = <<~'TEXT'
       usage: jrf [options] 'STAGE >> STAGE >> ...'
@@ -93,6 +102,7 @@ module Jrf
       required_libraries.each { |library| require library }
 
       file_paths = argv.dup
+      @files = file_paths
 
       runner = Runner.new(
         input: file_paths.empty? ? input : file_paths,

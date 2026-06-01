@@ -437,10 +437,12 @@ This is most useful inside a CLI expression that needs to build a lookup hash fr
 jrf '$lookup ||= Jrf.new(
        proc { select(_["type"] == "conn_stats") },
        proc { reduce({}) { |a, v| a[[v["tid"], v["conn"]]] = v["num-packets.late-acked"]; a } }
-     ).read("log.ndjson").first
+     ).read(*Jrf::CLI.files).first
      select(_["type"] == "h3s_ttlb" && $lookup[[_["tid"], _["conn_id"]]] == 0)' \
    log.ndjson
 ```
+
+`Jrf::CLI.files` is the list of input paths given on the command line (in argv order; empty when reading from stdin), so the lookup is built from the same files the command streams — a self-join.
 
 ## LICENSE
 
