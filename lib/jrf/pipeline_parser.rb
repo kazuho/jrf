@@ -28,13 +28,13 @@ module Jrf
         ch = source[i]
 
         if quote
-          escaped = !escaped && ch == "\\" if quote != "'"
-          if quote == "'" && ch == "'" && !escaped
-            quote = nil
-          elsif quote != "'" && ch == quote && !escaped
+          if escaped
+            escaped = false
+          elsif ch == "\\"
+            escaped = true
+          elsif ch == quote
             quote = nil
           end
-          escaped = false if ch != "\\" && quote != "'"
           i += 1
           next
         end

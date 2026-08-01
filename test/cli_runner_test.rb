@@ -259,6 +259,23 @@ class CliRunnerTest < JrfTestCase
     stdout, stderr, status = run_jrf('(-> { 6 }).call / 3', input_split)
     assert_success(status, stderr, "division after block")
     assert_equal(%w[2], lines(stdout), "division after block output")
+
+    input_quoted = <<~'NDJSON'
+      {"s":"a\">>b","x":5}
+      {"s":"other","x":7}
+    NDJSON
+
+    stdout, stderr, status = run_jrf(%q{select(_["s"] == "a\">>b") >> _["x"]}, input_quoted)
+    assert_success(status, stderr, "escaped double quote in string")
+    assert_equal(%w[5], lines(stdout), "escaped double quote output")
+
+    input_single = <<~NDJSON
+      {"s":"a'>>b","x":9}
+    NDJSON
+
+    stdout, stderr, status = run_jrf(%q{select(_["s"] == 'a\'>>b') >> _["x"]}, input_single)
+    assert_success(status, stderr, "escaped single quote in string")
+    assert_equal(%w[9], lines(stdout), "escaped single quote output")
   end
 
   def test_flat
